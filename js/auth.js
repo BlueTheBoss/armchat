@@ -1,7 +1,8 @@
-import { auth, db } from './firebase-config.js';
+import { auth, db, googleProvider } from './firebase-config.js';
 import { 
     createUserWithEmailAndPassword, 
     signInWithEmailAndPassword, 
+    signInWithPopup,
     onAuthStateChanged,
     signOut 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -15,8 +16,10 @@ const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const loginBtn = document.getElementById('login-btn');
 const signupBtn = document.getElementById('signup-btn');
+const googleBtn = document.getElementById('google-btn');
 const authError = document.getElementById('auth-error');
 const logoutBtn = document.getElementById('logout-btn');
+
 
 let currentUser = null;
 
@@ -89,9 +92,31 @@ loginBtn.addEventListener('click', async (e) => {
     }
 });
 
+// Google Login
+googleBtn.addEventListener('click', async () => {
+    hideError();
+    try {
+        const result = await signInWithPopup(auth, googleProvider);
+        const user = result.user;
+        
+        // Ensure user is in Firestore
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (!userDoc.exists()) {
+            await setDoc(doc(db, "users", user.uid), {
+                uid: user.uid,
+                email: user.email,
+                createdAt: new Date().toISOString()
+            });
+        }
+    } catch (error) {
+        showError(error.message);
+    }
+});
+
 // Logout
 logoutBtn.addEventListener('click', () => {
     signOut(auth);
 });
+
 
 export const getCurrentUser = () => currentUser;
