@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArmChat - Neubrutalism Chat</title>
+    <!-- Google Fonts for typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    
+    <!-- AUTHENTICATION VIEW -->
+    <section id="auth-view" class="view active-view">
+        <div class="auth-card brutal-box">
+            <h1 class="brand-title">ArmChat</h1>
+            <p>Welcome to the brutal chat platform.</p>
+            
+            <form id="auth-form">
+                <div class="input-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" class="brutal-input" placeholder="you@domain.com" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" class="brutal-input" placeholder="••••••••" required>
+                </div>
+
+                <div class="action-buttons">
+                    <button type="submit" id="login-btn" class="brutal-btn primary">Login</button>
+                    <button type="button" id="signup-btn" class="brutal-btn secondary">Sign Up</button>
+                </div>
+                
+                <p id="auth-error" class="error-text hidden"></p>
+            </form>
+        </div>
+    </section>
+
+    <!-- MAIN CHAT VIEW -->
+    <section id="chat-view" class="view hidden-view">
+        <div class="chat-layout">
+            
+            <!-- Sidebar: User List -->
+            <aside class="sidebar brutal-box">
+                <div class="sidebar-header">
+                    <h2 class="brand-title-small">ArmChat</h2>
+                    <p id="current-user-display" class="current-user"></p>
+                    <button id="logout-btn" class="brutal-btn small-btn danger">Logout</button>
+                </div>
+                
+                <div class="user-search">
+                    <input type="text" id="search-users" class="brutal-input" placeholder="Search users...">
+                </div>
+                
+                <ul id="user-list" class="user-list">
+                    <!-- Users get populated here -->
+                </ul>
+            </aside>
+
+            <!-- Main Chat Area -->
+            <main class="chat-area brutal-box">
+                <div class="chat-header brutal-border-bottom">
+                    <h3 id="active-chat-title">Select a user to start chatting</h3>
+                    <span id="active-chat-status" class="status-indicator"></span>
+                </div>
+                
+                <div id="messages-container" class="messages-container">
+                    <!-- Messages will be injected here -->
+                    <div class="empty-state">
+                        <p>No messages yet. Send a 'Yo!' to break the ice.</p>
+                    </div>
+                </div>
+
+                <form id="message-form" class="message-input-area brutal-border-top">
+                    <input type="text" id="message-input" class="brutal-input" placeholder="Type your message..." disabled autocomplete="off">
+                    <button type="submit" id="send-btn" class="brutal-btn primary" disabled>Send</button>
+                </form>
+            </main>
+
+        </div>
+    </section>
+
+    <!-- Scripts using ES Modules for Firebase interoperability -->
+    <script type="module" src="js/firebase-config.js"></script>
+    <script type="module" src="js/auth.js"></script>
+    <script type="module" src="js/chat.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
