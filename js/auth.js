@@ -6,8 +6,8 @@ import {
     onAuthStateChanged,
     signOut 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { switchView, updateCurrentUserDisplay } from './app.js';
+import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { switchView, updateCurrentUserDisplay, updateMyProfilePhoto, processImage } from './app.js';
 import { loadUsers, setupChatSystem } from './chat.js';
 
 // DOM Elements
@@ -20,22 +20,102 @@ const googleBtn = document.getElementById('google-btn');
 const authError = document.getElementById('auth-error');
 const logoutBtn = document.getElementById('logout-btn');
 
+// Setup View Elements
+const setupForm = document.getElementById('setup-form');
+const usernameInput = document.getElementById('username');
+const photoInput = document.getElementById('profile-photo-input');
+const photoPreview = document.getElementById('setup-photo-preview');
 
 let currentUser = null;
+let currentPhotoFile = null;
 
 // Handle Auth State Changes
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
-        switchView('chat-view');
-        updateCurrentUserDisplay(user.email);
         
-        // Fetch users and setup chat
-        loadUsers(user.uid);
-        setupChatSystem(user.uid);
+        // Fetch user data to check for username
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        const userData = userDoc.data();
+
+        if (userData && userData.username) {
+            switchView('chat-view');
+            updateCurrentUserDisplay(userData.username);
+            if(userData.photoURL) updateMyProfilePhoto(userData.photoURL);
+            
+            loadUsers(user.uid);
+            setupChatSystem(user.uid);
+        } else {
+            switchView('setup-view');
+        }
     } else {
         currentUser = null;
         switchView('auth-view');
+    }
+});
+
+// Profile Setup Logic
+photoInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        currentPhotoFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => photoPreview.style.backgroundImage = `url(${e.target.result})`;
+        reader.readAsDataURL(file);
+    }
+});
+
+setupForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const username = usernameInput.value.trim().toLowerCase();
+    
+    if (!username || username.length < 3) return alert('Username must be at least 3 chars');
+
+    // UI Loading State
+    const originalBtnText = submitBtn.textContent;
+    submitBtn.textContent = 'Processing...';
+    submitBtn.disabled = true;
+
+    try {
+        console.log('Checking username availability...');
+        // Check if username is taken
+        const q = query(collection(db, "users"), where("username", "==", username));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            submitBtn.textContent = originalBtnText;
+            submitBtn.disabled = false;
+            return alert('Username already taken!');
+        }
+
+        let photoURL = 'https://ui-avatars.com/api/?name=' + username + '&background=random&size=200'; // Default
+        
+        if (currentPhotoFile) {
+            console.log('Resizing and converting photo to Base64...');
+            photoURL = await processImage(currentPhotoFile, 400); 
+        }
+
+        console.log('Updating user document in Firestore...');
+        // Update Firestore
+        await updateDoc(doc(db, "users", currentUser.uid), {
+            username: username,
+            photoURL: photoURL
+        });
+
+        console.log('Profile setup complete. Switching view.');
+        // Continue to chat
+        switchView('chat-view');
+        updateCurrentUserDisplay(username);
+        updateMyProfilePhoto(photoURL);
+        
+        loadUsers(currentUser.uid);
+        setupChatSystem(currentUser.uid);
+
+    } catch (error) {
+        console.error('Setup Error:', error);
+        alert('Error saving profile: ' + error.message);
+        submitBtn.textContent = originalBtnText;
+        submitBtn.disabled = false;
     }
 });
 
@@ -64,7 +144,6 @@ signupBtn.addEventListener('click', async (e) => {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         
-        // Add user to Firestore 'users' collection
         await setDoc(doc(db, "users", user.uid), {
             uid: user.uid,
             email: user.email,
@@ -99,7 +178,6 @@ googleBtn.addEventListener('click', async () => {
         const result = await signInWithPopup(auth, googleProvider);
         const user = result.user;
         
-        // Ensure user is in Firestore
         const userDoc = await getDoc(doc(db, "users", user.uid));
         if (!userDoc.exists()) {
             await setDoc(doc(db, "users", user.uid), {
@@ -115,8 +193,10 @@ googleBtn.addEventListener('click', async () => {
 
 // Logout
 logoutBtn.addEventListener('click', () => {
-    signOut(auth);
+    signOut(auth).then(() => {
+        window.location.reload(); // Hard reset for clean state
+    });
 });
 
-
 export const getCurrentUser = () => currentUser;
+

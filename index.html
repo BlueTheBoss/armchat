@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArmChat - Neubrutalism Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>ArmChat | Private 1-on-1 Messenger</title>
     <!-- Google Fonts for typography -->
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
@@ -13,7 +13,10 @@
     <!-- AUTHENTICATION VIEW -->
     <section id="auth-view" class="view active-view">
         <div class="auth-card brutal-box">
-            <h1 class="brand-title">ArmChat</h1>
+            <div class="header-with-toggle">
+                <h1 class="brand-title">ArmChat</h1>
+                <button type="button" class="theme-toggle-btn brutal-btn small-btn secondary">Dark mode</button>
+            </div>
             <p>Welcome to the brutal chat platform.</p>
             
             <form id="auth-form">
@@ -46,6 +49,29 @@
         </div>
     </section>
 
+    <!-- PROFILE SETUP OVERLAY -->
+    <section id="setup-view" class="view hidden-view">
+        <div class="auth-card brutal-box" style="background-color: var(--secondary-color);">
+            <h1 class="brand-title">Welcome!</h1>
+            <p>Let's personalize your brutal profile.</p>
+            
+            <form id="setup-form">
+                <div class="profile-pic-setup">
+                    <div id="setup-photo-preview" class="photo-circle brutal-box"></div>
+                    <label for="profile-photo-input" class="brutal-btn small-btn primary">Choose Photo</label>
+                    <input type="file" id="profile-photo-input" accept="image/*" hidden>
+                </div>
+
+                <div class="input-group">
+                    <label for="username">Pick a unique Username</label>
+                    <input type="text" id="username" class="brutal-input" placeholder="brutal_user_123" required>
+                </div>
+
+                <button type="submit" id="save-profile-btn" class="brutal-btn primary" style="width: 100%;">Get Started</button>
+            </form>
+        </div>
+    </section>
+
     <!-- MAIN CHAT VIEW -->
     <section id="chat-view" class="view hidden-view">
         <div class="chat-layout">
@@ -53,9 +79,29 @@
             <!-- Sidebar: User List -->
             <aside class="sidebar brutal-box">
                 <div class="sidebar-header">
-                    <h2 class="brand-title-small">ArmChat</h2>
-                    <p id="current-user-display" class="current-user"></p>
-                    <button id="logout-btn" class="brutal-btn small-btn danger">Logout</button>
+                    <div class="logo-container" id="logo-button">
+                        <h2 class="brand-title-extra-small no-margin">ArmChat ▼</h2>
+                        
+                        <div id="profile-menu" class="profile-dropdown brutal-box hidden">
+                            <div class="menu-user-info brutal-border-bottom">
+                                <div id="my-profile-photo" class="photo-circle-small brutal-box"></div>
+                                <p id="current-user-display" class="current-user-menu"></p>
+                            </div>
+                            <button id="change-photo-btn" class="menu-item brutal-border-bottom">Update Photo</button>
+                            <input type="file" id="change-photo-input" accept="image/*" hidden>
+                            <button type="button" class="theme-toggle-btn menu-item brutal-border-bottom">DARK MODE</button>
+                            <div class="menu-item brutal-border-bottom">
+                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">SIGNATURE FOG</p>
+                                <div class="accent-swatches">
+                                    <div class="swatch crimson" title="Crimson" data-color="crimson"></div>
+                                    <div class="swatch cobalt" title="Cobalt" data-color="cobalt"></div>
+                                    <div class="swatch emerald" title="Emerald" data-color="emerald"></div>
+                                    <div class="swatch amber" title="Amber" data-color="amber"></div>
+                                </div>
+                            </div>
+                            <button id="logout-btn" class="menu-item danger">Logout</button>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="user-search">
@@ -69,9 +115,13 @@
 
             <!-- Main Chat Area -->
             <main class="chat-area brutal-box">
-                <div class="chat-header brutal-border-bottom">
-                    <h3 id="active-chat-title">Select a user to start chatting</h3>
-                    <span id="active-chat-status" class="status-indicator"></span>
+                <div class="chat-header">
+                    <button id="menu-toggle" class="brutal-btn small-btn mobile-only">☰</button>
+                    <div id="active-chat-photo" class="photo-circle-small hidden"></div>
+                    <div class="header-text-group">
+                        <h3 id="active-chat-title">ArmChat</h3>
+                        <div id="active-chat-status" class="status-indicator">Select a user to start</div>
+                    </div>
                 </div>
                 
                 <div id="messages-container" class="messages-container">
@@ -81,14 +131,37 @@
                     </div>
                 </div>
 
-                <form id="message-form" class="message-input-area brutal-border-top">
-                    <input type="text" id="message-input" class="brutal-input" placeholder="Type your message..." disabled autocomplete="off">
-                    <button type="submit" id="send-btn" class="brutal-btn primary" disabled>Send</button>
-                </form>
-            </main>
+                <div id="typing-indicator" class="typing-indicator hidden">
+                    <span id="typing-text"></span>
+                </div>
+
+                <div class="message-input-area">
+                    <form id="message-form" class="flex-grow flex gap-10">
+                        <input type="text" id="message-input" class="brutal-input" placeholder="Type your message..." autocomplete="off" disabled>
+                        <button type="submit" id="send-btn" class="brutal-btn primary" disabled>Send</button>
+                    </form>
+                </div>
 
         </div>
     </section>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu brutal-box hidden">
+        <button id="react-btn" class="menu-item brutal-border-bottom">React</button>
+        <button id="delete-for-me-btn" class="menu-item brutal-border-bottom">Delete for me</button>
+        <button id="delete-for-everyone-btn" class="menu-item danger">Delete for everyone</button>
+    </div>
+
+    <!-- Reactions Overlay -->
+    <div id="reactions-overlay" class="reactions-overlay brutal-box hidden">
+        <button class="reaction-option">👍</button>
+        <button class="reaction-option">❤️</button>
+        <button class="reaction-option">😂</button>
+        <button class="reaction-option">😮</button>
+        <button class="reaction-option">😢</button>
+        <button class="reaction-option">🔥</button>
+    </div>
+
 
     <!-- Scripts using ES Modules for Firebase interoperability -->
     <script type="module" src="js/firebase-config.js"></script>
