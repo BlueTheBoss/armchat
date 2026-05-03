@@ -245,6 +245,8 @@ const listenForMessages = (currentUid, targetUid) => {
         let lastSenderId = null;
         let lastTimestamp = 0;
 
+        const fragment = document.createDocumentFragment();
+
         snapshot.forEach((doc) => {
             const msg = doc.data();
             const msgId = doc.id;
@@ -255,17 +257,18 @@ const listenForMessages = (currentUid, targetUid) => {
             // Grouping logic (same sender within 5 mins)
             const isGrouped = lastSenderId === msg.senderId && (msg.timestamp ? (msg.timestamp.toMillis() - lastTimestamp < 300000) : true);
             
-            renderMessage(msg, msgId, currentUid, isGrouped);
+            renderMessage(msg, msgId, currentUid, isGrouped, fragment);
             
             lastSenderId = msg.senderId;
             lastTimestamp = msg.timestamp ? msg.timestamp.toMillis() : Date.now();
         });
         
+        messagesContainer.appendChild(fragment);
         scrollToBottom();
     });
 };
 
-const renderMessage = (msg, msgId, currentUid, isGrouped) => {
+const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesContainer) => {
     const isSent = msg.senderId === currentUid;
     
     // Signature Fog Lookup
@@ -379,7 +382,7 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         handleReply(msgId, msg.text);
     });
 
-    messagesContainer.appendChild(div);
+    container.appendChild(div);
 };
 
 /**
