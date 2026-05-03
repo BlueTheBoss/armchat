@@ -163,7 +163,7 @@ body {
     font-family: var(--font-family);
     background-color: var(--bg-page);
     color: var(--text-primary);
-    height: 100vh;
+    height: 100dvh;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -267,7 +267,7 @@ body {
     display: flex; 
     width: 100%; 
     max-width: 1200px; 
-    height: calc(100vh - 40px); 
+    height: calc(100dvh - 40px);
     gap: 20px; 
 }
 
@@ -611,9 +611,19 @@ body {
 @media (max-width: 768px) {
     .mobile-only { display: flex; }
     
+    .view { padding: 15px; }
+
+    .auth-card {
+        padding: 20px;
+    }
+
+    .brand-title {
+        font-size: 2.2rem;
+    }
+
     .chat-layout {
         gap: 0;
-        height: 100vh;
+        height: 100dvh;
         max-width: 100%;
     }
     
