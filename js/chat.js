@@ -326,6 +326,8 @@ const listenForMessages = (chatId) => {
         let lastSenderId = null;
         let lastTimestamp = 0;
 
+        const fragment = document.createDocumentFragment();
+
         snapshot.forEach((doc) => {
             const msg = doc.data();
             const msgId = doc.id;
@@ -348,11 +350,12 @@ const listenForMessages = (chatId) => {
             lastTimestamp = msg.timestamp ? msg.timestamp.toMillis() : Date.now();
         });
         
+        messagesContainer.appendChild(fragment);
         scrollToBottom();
     });
 };
 
-const renderMessage = (msg, msgId, currentUid, isGrouped) => {
+const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesContainer) => {
     const isSent = msg.senderId === currentUid;
     
     // Identify sender for group chats
@@ -484,7 +487,7 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         handleReply(msgId, msg.text);
     });
 
-    messagesContainer.appendChild(div);
+    container.appendChild(div);
 };
 
 /**
