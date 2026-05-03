@@ -154,11 +154,6 @@ const selectUserChat = (targetUser) => {
         listenForMessages(currentUser.uid, targetUser.uid);
         listenForTyping(currentUser.uid, targetUser.uid);
     }
-
-    // Close sidebar on mobile after selecting a user
-    if (window.innerWidth < 768 && sidebar) {
-        sidebar.classList.remove('open');
-    }
 };
 
 
