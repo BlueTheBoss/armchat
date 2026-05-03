@@ -326,6 +326,8 @@ const listenForMessages = (chatId) => {
         let lastSenderId = null;
         let lastTimestamp = 0;
 
+        const fragment = document.createDocumentFragment();
+
         snapshot.forEach((doc) => {
             const msg = doc.data();
             const msgId = doc.id;
@@ -348,11 +350,23 @@ const listenForMessages = (chatId) => {
             lastTimestamp = msg.timestamp ? msg.timestamp.toMillis() : Date.now();
         });
         
+        messagesContainer.appendChild(fragment);
         scrollToBottom();
     });
 };
 
-const getSenderAccentClass = (msg, isSent) => {
+const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesContainer) => {
+    const isSent = msg.senderId === currentUid;
+    
+    // Identify sender for group chats
+    let senderName = '';
+    if (activeChatIsGroup && !isSent) {
+        const senderInfo = allUsers.find(u => u.uid === msg.senderId);
+        senderName = senderInfo ? (senderInfo.username || senderInfo.email.split('@')[0]) : 'Unknown';
+    }
+
+    // Signature Fog Lookup
+    let accentClass = '';
     const sender = allUsers.find(u => u.uid === msg.senderId) || (isSent ? getCurrentUser() : null);
     if (sender && sender.accentColor) {
         return `accent-${sender.accentColor}`;
@@ -493,7 +507,7 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         handleReply(msgId, msg.text);
     });
 
-    messagesContainer.appendChild(div);
+    container.appendChild(div);
 };
 
 /**
