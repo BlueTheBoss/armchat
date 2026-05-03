@@ -7,7 +7,7 @@ import {
     signOut 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { switchView, updateCurrentUserDisplay, updateMyProfilePhoto, processImage } from './app.js';
+import { switchView, updateCurrentUserDisplay, updateMyProfilePhoto, processImage, updateStatusSelect } from './app.js';
 import { loadUsers, setupChatSystem } from './chat.js';
 
 // DOM Elements
@@ -42,6 +42,7 @@ onAuthStateChanged(auth, async (user) => {
             switchView('chat-view');
             updateCurrentUserDisplay(userData.username);
             if(userData.photoURL) updateMyProfilePhoto(userData.photoURL);
+            if(userData.status) updateStatusSelect(userData.status);
             
             loadUsers(user.uid);
             setupChatSystem(user.uid);
