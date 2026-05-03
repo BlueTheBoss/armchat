@@ -1,28 +1,8 @@
 {
-  "name": "app",
+  "name": "armchat",
   "version": "1.0.0",
-  "description": "To make it easy for you to get started with GitLab, here's a list of recommended next steps.",
-  "main": "index.js",
+  "description": "ArmChat Private 1-on-1 Messenger",
   "scripts": {
-    "test": "jest"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/BlueTheBoss/armchat.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/BlueTheBoss/armchat/issues"
-  },
-  "homepage": "https://github.com/BlueTheBoss/armchat#readme",
-  "devDependencies": {
-    "@babel/core": "^7.29.0",
-    "@babel/preset-env": "^7.29.3",
-    "babel-jest": "^30.3.0",
-    "jest": "^30.3.0",
-    "jest-environment-jsdom": "^30.3.0"
+    "build": "./build.sh"
   }
 }
