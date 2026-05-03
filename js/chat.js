@@ -8,11 +8,11 @@ import {
     orderBy, 
     addDoc, 
     updateDoc,
-    getDoc,
     deleteDoc,
     doc,
     setDoc,
     arrayUnion,
+    increment,
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -104,12 +104,18 @@ const renderUserList = (users) => {
         li.className = `user-row ${activeChatUserId === user.uid ? 'active' : ''}`;
         
         const name = user.username || user.email.split('@')[0];
-        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${name}&background=random`;
+        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
         
-        li.innerHTML = `
-            <div class="photo-circle-small" style="background-image: url(${photoURL});"></div>
-            <span class="user-name-text">${name}</span>
-        `;
+        const photoDiv = document.createElement('div');
+        photoDiv.className = 'photo-circle-small';
+        photoDiv.style.backgroundImage = `url(${photoURL})`;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'user-name-text';
+        nameSpan.textContent = name;
+
+        li.appendChild(photoDiv);
+        li.appendChild(nameSpan);
         
         li.addEventListener('click', () => selectUserChat(user));
         userList.appendChild(li);
@@ -175,26 +181,24 @@ const listenForTyping = (currentUid, targetUid) => {
                 // Ghost Typing Logic: Show snippet of what they are typing
                 const ghostText = typeof status === 'string' ? status.substring(0, 40) : '';
 
+                const typingSpan = typingIndicator.querySelector('span');
+                typingSpan.textContent = ''; // Clear previous
+
+                const targetNameText = activeChatTitle.textContent.replace('Chatting with ', '');
+
+                if (ghostText) {
+                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is writing: "${ghostText}"`));
+                } else {
+                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is typing`));
+                }
+
                 // Animated dots
-                const typingDots = `<span style="animation: typing 1.4s infinite 0.2s;">.</span><span style="animation: typing 1.4s infinite 0.4s;">.</span><span style="animation: typing 1.4s infinite 0.6s;">.</span>`;
-
-                // Escape text to prevent XSS
-                const escapeHTML = (str) => {
-                    return str.replace(/[&<>'"]/g,
-                        tag => ({
-                            '&': '&amp;',
-                            '<': '&lt;',
-                            '>': '&gt;',
-                            "'": '&#39;',
-                            '"': '&quot;'
-                        }[tag] || tag)
-                    );
-                };
-                const safeGhostText = escapeHTML(ghostText);
-
-                typingIndicator.querySelector('span').innerHTML = safeGhostText
-                    ? `${escapeHTML(targetName)} is writing: "${safeGhostText}${typingDots}"`
-                    : `${escapeHTML(targetName)} is typing${typingDots}`;
+                [0.2, 0.4, 0.6].forEach(delay => {
+                    const dot = document.createElement('span');
+                    dot.textContent = '.';
+                    dot.style.animation = `typing 1.4s infinite ${delay}s`;
+                    typingSpan.appendChild(dot);
+                });
 
                 // Ensure dynamic keyframes exist
                 if (!document.getElementById('typing-keyframes')) {
@@ -407,7 +411,11 @@ const smartPosition = (element, x, y) => {
  * Update Header Status (2D Flat)
  */
 const updateHeaderStatus = (isOnline) => {
-    activeChatStatus.innerHTML = `<span class="status-dot ${isOnline ? 'online' : 'offline'}"></span> ${isOnline ? 'Online' : 'Offline'}`;
+    activeChatStatus.textContent = '';
+    const statusDot = document.createElement('span');
+    statusDot.className = `status-dot ${isOnline ? 'online' : 'offline'}`;
+    activeChatStatus.appendChild(statusDot);
+    activeChatStatus.appendChild(document.createTextNode(isOnline ? ' Online' : ' Offline'));
 };
 
 /**
@@ -460,7 +468,7 @@ const handleReply = (msgId, text) => {
         previewBox.appendChild(textSpan);
 
         const closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '&times;';
+        closeBtn.textContent = '×';
         closeBtn.style.background = 'none';
         closeBtn.style.border = 'none';
         closeBtn.style.fontSize = '1.2rem';
@@ -509,12 +517,10 @@ const addReaction = async (msgId, emoji, delta = 1) => {
     
     // In a real app, you'd track WHICH user reacted.
     // For this MVP, we'll increment/decrement a counter.
-    const msgDoc = await getDoc(msgRef);
-    const reactions = msgDoc.data().reactions || {};
-    reactions[emoji] = (reactions[emoji] || 0) + delta;
-    if (reactions[emoji] < 0) reactions[emoji] = 0;
-
-    await updateDoc(msgRef, { reactions });
+    // Optimizing using increment() to avoid extra getDoc() roundtrip.
+    await updateDoc(msgRef, {
+        [`reactions.${emoji}`]: increment(delta)
+    });
 };
 
 document.querySelectorAll('.reaction-option').forEach(btn => {
