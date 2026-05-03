@@ -62,6 +62,15 @@ let replyingToId = null;
 let replyingToText = null;
 let typingTimeout = null;
 
+// Debounce helper
+const debounce = (func, delay) => {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
+    };
+};
+
 // Helper to create a consistent Chat ID for 1-on-1 chats
 const getChatId = (uid1, uid2) => {
     return [uid1, uid2].sort().join('_');
@@ -110,11 +119,11 @@ const renderUserList = (users) => {
 /**
  * User Search Filter
  */
-searchUsers.addEventListener('input', (e) => {
+searchUsers.addEventListener('input', debounce((e) => {
     const term = e.target.value.toLowerCase();
     const filtered = allUsers.filter(user => (user.username || user.email).toLowerCase().includes(term));
     renderUserList(filtered);
-});
+}, 300));
 
 /**
  * Select a user to chat with
