@@ -69,6 +69,7 @@ let activeChatIsGroup = false;
 let activeChatObj = null;
 let typingObj = null;
 let allUsers = [];
+let allUsersMap = new Map();
 let allGroups = [];
 let contextMessageId = null;
 let contextMessageText = null;
@@ -101,6 +102,7 @@ export const loadUsers = (currentUid) => {
         allUsers = snapshot.docs
             .map(doc => doc.data())
             .filter(user => user.uid !== currentUid);
+        allUsersMap = new Map(allUsers.map(u => [u.uid, u]));
         
         renderUserList();
     });
@@ -361,13 +363,13 @@ const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesCo
     // Identify sender for group chats
     let senderName = '';
     if (activeChatIsGroup && !isSent) {
-        const senderInfo = allUsers.find(u => u.uid === msg.senderId);
+        const senderInfo = allUsersMap.get(msg.senderId);
         senderName = senderInfo ? (senderInfo.username || senderInfo.email.split('@')[0]) : 'Unknown';
     }
 
     // Signature Fog Lookup
     let accentClass = '';
-    const sender = allUsers.find(u => u.uid === msg.senderId) || (isSent ? getCurrentUser() : null);
+    const sender = allUsersMap.get(msg.senderId) || (isSent ? getCurrentUser() : null);
     if (sender && sender.accentColor) {
         return `accent-${sender.accentColor}`;
     }
