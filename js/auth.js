@@ -11,7 +11,6 @@ import { switchView, updateCurrentUserDisplay, updateMyProfilePhoto, processImag
 import { loadUsers, setupChatSystem } from './chat.js';
 
 // DOM Elements
-const authForm = document.getElementById('auth-form');
 const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const loginBtn = document.getElementById('login-btn');
