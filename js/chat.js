@@ -8,12 +8,11 @@ import {
     orderBy, 
     addDoc, 
     updateDoc,
-    getDoc,
     deleteDoc,
     doc,
     setDoc,
     arrayUnion,
-    where,
+    increment,
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -62,6 +61,9 @@ const deleteMeBtn = document.getElementById('delete-for-me-btn');
 const deleteEveryoneBtn = document.getElementById('delete-for-everyone-btn');
 const reactOptionBtn = document.getElementById('react-btn');
 
+// Context Menu Elements (Reply button now in HTML)
+const replyBtn = document.getElementById('reply-btn');
+
 let activeChatUserId = null;
 let activeChatIsGroup = false;
 let activeChatObj = null;
@@ -69,8 +71,20 @@ let typingObj = null;
 let allUsers = [];
 let allGroups = [];
 let contextMessageId = null;
+let contextMessageText = null;
+let replyingToId = null;
+let replyingToText = null;
 let typingTimeout = null;
 let selectedUsersForGroup = new Set();
+
+// Debounce helper
+const debounce = (func, delay) => {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
+    };
+};
 
 // Helper to create a consistent Chat ID for 1-on-1 chats
 const getChatId = (uid1, uid2) => {
@@ -132,21 +146,18 @@ const renderUserList = (filteredUsers = null, filteredGroups = null) => {
         li.className = `user-row ${activeChatUserId === user.uid && !activeChatIsGroup ? 'active' : ''}`;
         
         const name = user.username || user.email.split('@')[0];
-        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${name}&background=random`;
+        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
         
-        let statusDot = '';
-        if (user.status === 'Online') {
-            statusDot = '<span class="status-dot online" style="margin-left: 5px;"></span>';
-        } else if (user.status === 'Away') {
-            statusDot = '<span class="status-dot" style="background-color: #F59E0B; margin-left: 5px;"></span>';
-        } else if (user.status === 'Do Not Disturb') {
-            statusDot = '<span class="status-dot" style="background-color: #EF4444; margin-left: 5px;"></span>';
-        }
+        const photoDiv = document.createElement('div');
+        photoDiv.className = 'photo-circle-small';
+        photoDiv.style.backgroundImage = `url(${photoURL})`;
 
-        li.innerHTML = `
-            <div class="photo-circle-small" style="background-image: url(${photoURL});"></div>
-            <span class="user-name-text">${name}${statusDot}</span>
-        `;
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'user-name-text';
+        nameSpan.textContent = name;
+
+        li.appendChild(photoDiv);
+        li.appendChild(nameSpan);
         
         li.addEventListener('click', () => selectUserChat(user));
         userList.appendChild(li);
@@ -156,12 +167,11 @@ const renderUserList = (filteredUsers = null, filteredGroups = null) => {
 /**
  * User Search Filter
  */
-searchUsers.addEventListener('input', (e) => {
+searchUsers.addEventListener('input', debounce((e) => {
     const term = e.target.value.toLowerCase();
-    const filteredUsers = allUsers.filter(user => (user.username || user.email).toLowerCase().includes(term));
-    const filteredGroups = allGroups.filter(group => group.name.toLowerCase().includes(term));
-    renderUserList(filteredUsers, filteredGroups);
-});
+    const filtered = allUsers.filter(user => (user.username || user.email).toLowerCase().includes(term));
+    renderUserList(filtered);
+}, 300));
 
 /**
  * Select a user to chat with
@@ -229,31 +239,6 @@ const selectGroupChat = (group) => {
     }
 };
 
-/**
- * Message Form Handler
- */
-messageForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const text = messageInput.value.trim();
-    const currentUser = getCurrentUser();
-    
-    if (!text || !activeChatUserId || !currentUser) return;
-    
-    messageInput.value = '';
-    messageInput.focus();
-
-    try {
-        await addDoc(collection(db, "chats", getChatId(currentUser.uid, activeChatUserId), "messages"), {
-            senderId: currentUser.uid,
-            text: text,
-            type: 'text',
-            timestamp: serverTimestamp()
-        });
-    } catch (err) {
-        console.error(err);
-        alert('Failed to send message');
-    }
-});
 
 /**
  * Typing Indicator Logic
@@ -273,12 +258,32 @@ const listenForTyping = (chatId, targetUid) => {
                 // Ghost Typing Logic: Show snippet of what they are typing
                 const ghostText = typeof status === 'string' ? status.substring(0, 40) : '';
 
-                // Clear previous content to allow animation re-triggering nicely
-                const span = typingIndicator.querySelector('span');
-                span.textContent = ghostText
-                    ? `${targetName} is writing: "${ghostText}..."` 
-                    : `${targetName} is typing...`;
+                const typingSpan = typingIndicator.querySelector('span');
+                typingSpan.textContent = ''; // Clear previous
 
+                const targetNameText = activeChatTitle.textContent.replace('Chatting with ', '');
+
+                if (ghostText) {
+                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is writing: "${ghostText}"`));
+                } else {
+                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is typing`));
+                }
+
+                // Animated dots
+                [0.2, 0.4, 0.6].forEach(delay => {
+                    const dot = document.createElement('span');
+                    dot.textContent = '.';
+                    dot.style.animation = `typing 1.4s infinite ${delay}s`;
+                    typingSpan.appendChild(dot);
+                });
+
+                // Ensure dynamic keyframes exist
+                if (!document.getElementById('typing-keyframes')) {
+                    const style = document.createElement('style');
+                    style.id = 'typing-keyframes';
+                    style.innerHTML = `@keyframes typing { 0%, 100% { opacity: 0.2; } 20% { opacity: 1; } }`;
+                    document.head.appendChild(style);
+                }
             } else {
                 typingIndicator.classList.add('hidden');
             }
@@ -374,14 +379,28 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         showContextMenu(e.clientX, e.clientY, msgId, isSent);
     };
     
-    if (senderName && !isGrouped) {
-        const senderSpan = document.createElement('div');
-        senderSpan.style.fontSize = '0.75rem';
-        senderSpan.style.fontWeight = 'bold';
-        senderSpan.style.marginBottom = '2px';
-        senderSpan.style.opacity = '0.8';
-        senderSpan.textContent = senderName;
-        div.appendChild(senderSpan);
+    // Reply Preview
+    if (msg.replyToId && msg.replyToText) {
+        const replyPreview = document.createElement('div');
+        replyPreview.className = 'reply-preview';
+        replyPreview.textContent = msg.replyToText;
+
+        // Scroll to replied message on click
+        replyPreview.style.cursor = 'pointer';
+        replyPreview.onclick = () => {
+            const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
+            if (targetMsg) {
+                targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
+                targetMsg.style.transform = 'scale(1.05)';
+                targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
+                setTimeout(() => {
+                    targetMsg.style.transform = '';
+                    targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
+                }, 1000);
+            }
+        };
+        div.appendChild(replyPreview);
     }
 
     if (msg.type === 'image') {
@@ -428,26 +447,43 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
 
     const timeSpan = document.createElement('span');
     timeSpan.className = 'message-time';
+    timeSpan.style.display = 'flex';
+    timeSpan.style.alignItems = 'center';
+    timeSpan.style.justifyContent = 'flex-end';
+    timeSpan.style.gap = '4px';
     
     if (msg.timestamp) {
         const date = msg.timestamp.toDate();
-        let timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        timeSpan.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        // Add Read Receipt indicator for sent messages
-        if (isSent && !activeChatIsGroup) { // simplified read receipts for 1-on-1 only
-            if (msg.read) {
-                timeStr += ' ✓✓'; // Double check for read
-            } else {
-                timeStr += ' ✓';  // Single check for sent/delivered
-            }
+        if (isSent) {
+            // Read receipt indicator (Simulated Delivered)
+            const receipt = document.createElement('span');
+            receipt.innerHTML = '&#10003;&#10003;'; // double checkmark
+            receipt.style.fontSize = '0.7rem';
+            receipt.style.color = '#fff';
+            receipt.style.opacity = '0.8';
+            timeSpan.appendChild(receipt);
         }
-
-        timeSpan.textContent = timeStr;
     } else {
         timeSpan.textContent = "Sending...";
+        if (isSent) {
+            const receipt = document.createElement('span');
+            receipt.innerHTML = '&#10003;'; // single checkmark
+            receipt.style.fontSize = '0.7rem';
+            receipt.style.color = '#fff';
+            receipt.style.opacity = '0.5';
+            timeSpan.appendChild(receipt);
+        }
     }
     
     div.appendChild(timeSpan);
+
+    // Double click to reply
+    div.addEventListener('dblclick', () => {
+        handleReply(msgId, msg.text);
+    });
+
     messagesContainer.appendChild(div);
 };
 
@@ -475,16 +511,12 @@ const smartPosition = (element, x, y) => {
 /**
  * Update Header Status (2D Flat)
  */
-const updateHeaderStatus = (status) => {
-    if (status === true || status === 'Online') {
-        activeChatStatus.innerHTML = `<span class="status-dot online"></span> Online`;
-    } else if (status === 'Away') {
-        activeChatStatus.innerHTML = `<span class="status-dot" style="background-color: #F59E0B;"></span> Away`;
-    } else if (status === 'Do Not Disturb') {
-        activeChatStatus.innerHTML = `<span class="status-dot" style="background-color: #EF4444;"></span> Do Not Disturb`;
-    } else {
-        activeChatStatus.innerHTML = `<span class="status-dot offline"></span> Offline`;
-    }
+const updateHeaderStatus = (isOnline) => {
+    activeChatStatus.textContent = '';
+    const statusDot = document.createElement('span');
+    statusDot.className = `status-dot ${isOnline ? 'online' : 'offline'}`;
+    activeChatStatus.appendChild(statusDot);
+    activeChatStatus.appendChild(document.createTextNode(isOnline ? ' Online' : ' Offline'));
 };
 
 /**
@@ -492,14 +524,79 @@ const updateHeaderStatus = (status) => {
  */
 const showContextMenu = (x, y, msgId, isSent) => {
     contextMessageId = msgId;
+
+    // Find the message text for replying
+    const msgElement = document.querySelector(`.message[data-id="${msgId}"]`);
+    contextMessageText = msgElement ? msgElement.querySelector('div:not(.reply-preview):not(.reactions-container)').textContent : 'Message';
+
     contextMenu.classList.remove('hidden');
-    contextMenu.style.left = `${x}px`;
-    contextMenu.style.top = `${y}px`;
+
+    // Use smart positioning
+    smartPosition(contextMenu, x, y);
     
     deleteEveryoneBtn.classList.toggle('hidden', !isSent);
     editMsgBtn.classList.toggle('hidden', !isSent);
     reactionsOverlay.classList.add('hidden');
 };
+
+const handleReply = (msgId, text) => {
+    replyingToId = msgId;
+    replyingToText = text;
+
+    // Show UI indicator above input
+    let previewBox = document.getElementById('reply-preview-box');
+    if (!previewBox) {
+        previewBox = document.createElement('div');
+        previewBox.id = 'reply-preview-box';
+        previewBox.style.padding = '8px 15px';
+        previewBox.style.backgroundColor = 'var(--bg-card)';
+        previewBox.style.borderTop = '2px solid var(--border-sidebar)';
+        previewBox.style.borderLeft = '2px solid var(--border-sidebar)';
+        previewBox.style.borderRight = '2px solid var(--border-sidebar)';
+        previewBox.style.borderTopLeftRadius = '16px';
+        previewBox.style.borderTopRightRadius = '16px';
+        previewBox.style.fontSize = '0.85rem';
+        previewBox.style.display = 'flex';
+        previewBox.style.justifyContent = 'space-between';
+        previewBox.style.alignItems = 'center';
+
+        const textSpan = document.createElement('span');
+        textSpan.id = 'reply-preview-text';
+        textSpan.style.opacity = '0.8';
+        textSpan.style.whiteSpace = 'nowrap';
+        textSpan.style.overflow = 'hidden';
+        textSpan.style.textOverflow = 'ellipsis';
+        textSpan.style.marginRight = '10px';
+        previewBox.appendChild(textSpan);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '×';
+        closeBtn.style.background = 'none';
+        closeBtn.style.border = 'none';
+        closeBtn.style.fontSize = '1.2rem';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.color = 'var(--text-primary)';
+        closeBtn.onclick = () => {
+            replyingToId = null;
+            replyingToText = null;
+            previewBox.remove();
+        };
+        previewBox.appendChild(closeBtn);
+
+        // Insert right above message input area
+        const inputArea = document.querySelector('.message-input-area');
+        inputArea.parentNode.insertBefore(previewBox, inputArea);
+    }
+
+    document.getElementById('reply-preview-text').textContent = `Replying to: ${text}`;
+    messageInput.focus();
+};
+
+replyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    contextMenu.classList.add('hidden');
+    handleReply(contextMessageId, contextMessageText);
+});
 
 document.addEventListener('click', () => {
     contextMenu.classList.add('hidden');
@@ -523,12 +620,10 @@ const addReaction = async (msgId, emoji, delta = 1) => {
     
     // In a real app, you'd track WHICH user reacted.
     // For this MVP, we'll increment/decrement a counter.
-    const msgDoc = await getDoc(msgRef);
-    const reactions = msgDoc.data().reactions || {};
-    reactions[emoji] = (reactions[emoji] || 0) + delta;
-    if (reactions[emoji] < 0) reactions[emoji] = 0;
-
-    await updateDoc(msgRef, { reactions });
+    // Optimizing using increment() to avoid extra getDoc() roundtrip.
+    await updateDoc(msgRef, {
+        [`reactions.${emoji}`]: increment(delta)
+    });
 };
 
 document.querySelectorAll('.reaction-option').forEach(btn => {
@@ -671,26 +766,24 @@ export const setupChatSystem = (currentUid) => {
         setTypingStatus(false);
         
         try {
-            if (editingMessageId) {
-                // Edit existing message
-                const msgRef = doc(db, collectionName, chatId, "messages", editingMessageId);
-                await updateDoc(msgRef, {
-                    text: text,
-                    edited: true,
-                    editedAt: serverTimestamp()
-                });
-                editingMessageId = null;
-                sendBtn.textContent = 'Send';
-            } else {
-                // Send new message
-                await addDoc(collection(db, collectionName, chatId, "messages"), {
-                    text: text,
-                    type: 'text',
-                    senderId: currentUid,
-                    timestamp: serverTimestamp(),
-                    hiddenFrom: []
-                });
+            const msgData = {
+                text: text,
+                senderId: currentUid,
+                timestamp: serverTimestamp(),
+                hiddenFrom: []
+            };
+
+            if (replyingToId) {
+                msgData.replyToId = replyingToId;
+                msgData.replyToText = replyingToText;
+
+                replyingToId = null;
+                replyingToText = null;
+                const existingPreview = document.getElementById('reply-preview-box');
+                if (existingPreview) existingPreview.remove();
             }
+
+            await addDoc(collection(db, "chats", chatId, "messages"), msgData);
         } catch (error) {
             console.error("Error sending/editing message: ", error);
         }
