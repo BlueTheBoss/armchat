@@ -12,6 +12,7 @@ const logoButton = document.getElementById('logo-button');
 const profileMenu = document.getElementById('profile-menu');
 const changePhotoBtn = document.getElementById('change-photo-btn');
 const changePhotoInput = document.getElementById('change-photo-input');
+const views = document.querySelectorAll('.view');
 
 // Initialize Theme on Load
 document.addEventListener('DOMContentLoaded', () => {
@@ -113,7 +114,7 @@ const updateThemeButtonsText = (theme) => {
 export const switchView = (viewId) => {
 
     // Hide all views
-    document.querySelectorAll('.view').forEach(view => view.classList.replace('active-view', 'hidden-view'));
+    views.forEach(view => view.classList.replace('active-view', 'hidden-view'));
     
     // Show target view
     const target = document.getElementById(viewId);
