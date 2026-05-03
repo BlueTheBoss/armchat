@@ -113,11 +113,37 @@ setupForm.addEventListener('submit', async (e) => {
 
     } catch (error) {
         console.error('Setup Error:', error);
-        alert('Error saving profile: ' + error.message);
+        alert(getFriendlyErrorMessage(error));
         submitBtn.textContent = originalBtnText;
         submitBtn.disabled = false;
     }
 });
+
+// Error mapping helper
+const getFriendlyErrorMessage = (error) => {
+    if (!error || !error.code) return 'An error occurred. Please try again.';
+
+    switch (error.code) {
+        case 'auth/email-already-in-use':
+            return 'This email is already in use.';
+        case 'auth/invalid-email':
+            return 'Please enter a valid email address.';
+        case 'auth/weak-password':
+            return 'Password is too weak. It must be at least 6 characters.';
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+            return 'Invalid email or password.';
+        case 'auth/too-many-requests':
+            return 'Too many unsuccessful login attempts. Please try again later.';
+        case 'auth/network-request-failed':
+            return 'Network error. Please check your connection and try again.';
+        case 'auth/popup-closed-by-user':
+            return 'Login cancelled.';
+        default:
+            return 'An error occurred. Please try again.';
+    }
+};
 
 // Helper for errors
 const showError = (message) => {
@@ -151,7 +177,7 @@ signupBtn.addEventListener('click', async (e) => {
         });
         
     } catch (error) {
-        showError(error.message);
+        showError(getFriendlyErrorMessage(error));
     }
 });
 
@@ -187,7 +213,7 @@ googleBtn.addEventListener('click', async () => {
             });
         }
     } catch (error) {
-        showError(error.message);
+        showError(getFriendlyErrorMessage(error));
     }
 });
 
