@@ -49,11 +49,17 @@ const deleteMeBtn = document.getElementById('delete-for-me-btn');
 const deleteEveryoneBtn = document.getElementById('delete-for-everyone-btn');
 const reactOptionBtn = document.getElementById('react-btn');
 
+// Context Menu Elements (Reply button now in HTML)
+const replyBtn = document.getElementById('reply-btn');
+
 let activeChatUserId = null;
 let activeChatObj = null;
 let typingObj = null;
 let allUsers = [];
 let contextMessageId = null;
+let contextMessageText = null;
+let replyingToId = null;
+let replyingToText = null;
 let typingTimeout = null;
 
 // Helper to create a consistent Chat ID for 1-on-1 chats
@@ -141,31 +147,6 @@ const selectUserChat = (targetUser) => {
     }
 };
 
-/**
- * Message Form Handler
- */
-messageForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const text = messageInput.value.trim();
-    const currentUser = getCurrentUser();
-    
-    if (!text || !activeChatUserId || !currentUser) return;
-    
-    messageInput.value = '';
-    messageInput.focus();
-
-    try {
-        await addDoc(collection(db, "chats", getChatId(currentUser.uid, activeChatUserId), "messages"), {
-            senderId: currentUser.uid,
-            text: text,
-            type: 'text',
-            timestamp: serverTimestamp()
-        });
-    } catch (err) {
-        console.error(err);
-        alert('Failed to send message');
-    }
-});
 
 /**
  * Typing Indicator Logic
@@ -184,9 +165,35 @@ const listenForTyping = (currentUid, targetUid) => {
                 typingIndicator.classList.remove('hidden');
                 // Ghost Typing Logic: Show snippet of what they are typing
                 const ghostText = typeof status === 'string' ? status.substring(0, 40) : '';
-                typingIndicator.querySelector('span').textContent = ghostText 
-                    ? `${targetName} is writing: "${ghostText}..."` 
-                    : `${targetName} is typing...`;
+
+                // Animated dots
+                const typingDots = `<span style="animation: typing 1.4s infinite 0.2s;">.</span><span style="animation: typing 1.4s infinite 0.4s;">.</span><span style="animation: typing 1.4s infinite 0.6s;">.</span>`;
+
+                // Escape text to prevent XSS
+                const escapeHTML = (str) => {
+                    return str.replace(/[&<>'"]/g,
+                        tag => ({
+                            '&': '&amp;',
+                            '<': '&lt;',
+                            '>': '&gt;',
+                            "'": '&#39;',
+                            '"': '&quot;'
+                        }[tag] || tag)
+                    );
+                };
+                const safeGhostText = escapeHTML(ghostText);
+
+                typingIndicator.querySelector('span').innerHTML = safeGhostText
+                    ? `${escapeHTML(targetName)} is writing: "${safeGhostText}${typingDots}"`
+                    : `${escapeHTML(targetName)} is typing${typingDots}`;
+
+                // Ensure dynamic keyframes exist
+                if (!document.getElementById('typing-keyframes')) {
+                    const style = document.createElement('style');
+                    style.id = 'typing-keyframes';
+                    style.innerHTML = `@keyframes typing { 0%, 100% { opacity: 0.2; } 20% { opacity: 1; } }`;
+                    document.head.appendChild(style);
+                }
             } else {
                 typingIndicator.classList.add('hidden');
             }
@@ -269,6 +276,30 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         showContextMenu(e.clientX, e.clientY, msgId, isSent);
     };
     
+    // Reply Preview
+    if (msg.replyToId && msg.replyToText) {
+        const replyPreview = document.createElement('div');
+        replyPreview.className = 'reply-preview';
+        replyPreview.textContent = msg.replyToText;
+
+        // Scroll to replied message on click
+        replyPreview.style.cursor = 'pointer';
+        replyPreview.onclick = () => {
+            const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
+            if (targetMsg) {
+                targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
+                targetMsg.style.transform = 'scale(1.05)';
+                targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
+                setTimeout(() => {
+                    targetMsg.style.transform = '';
+                    targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
+                }, 1000);
+            }
+        };
+        div.appendChild(replyPreview);
+    }
+
     if (msg.type === 'image') {
         const img = document.createElement('img');
         img.src = msg.url;
@@ -302,15 +333,43 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
 
     const timeSpan = document.createElement('span');
     timeSpan.className = 'message-time';
+    timeSpan.style.display = 'flex';
+    timeSpan.style.alignItems = 'center';
+    timeSpan.style.justifyContent = 'flex-end';
+    timeSpan.style.gap = '4px';
     
     if (msg.timestamp) {
         const date = msg.timestamp.toDate();
         timeSpan.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        if (isSent) {
+            // Read receipt indicator (Simulated Delivered)
+            const receipt = document.createElement('span');
+            receipt.innerHTML = '&#10003;&#10003;'; // double checkmark
+            receipt.style.fontSize = '0.7rem';
+            receipt.style.color = '#fff';
+            receipt.style.opacity = '0.8';
+            timeSpan.appendChild(receipt);
+        }
     } else {
         timeSpan.textContent = "Sending...";
+        if (isSent) {
+            const receipt = document.createElement('span');
+            receipt.innerHTML = '&#10003;'; // single checkmark
+            receipt.style.fontSize = '0.7rem';
+            receipt.style.color = '#fff';
+            receipt.style.opacity = '0.5';
+            timeSpan.appendChild(receipt);
+        }
     }
     
     div.appendChild(timeSpan);
+
+    // Double click to reply
+    div.addEventListener('dblclick', () => {
+        handleReply(msgId, msg.text);
+    });
+
     messagesContainer.appendChild(div);
 };
 
@@ -347,13 +406,78 @@ const updateHeaderStatus = (isOnline) => {
  */
 const showContextMenu = (x, y, msgId, isSent) => {
     contextMessageId = msgId;
+
+    // Find the message text for replying
+    const msgElement = document.querySelector(`.message[data-id="${msgId}"]`);
+    contextMessageText = msgElement ? msgElement.querySelector('div:not(.reply-preview):not(.reactions-container)').textContent : 'Message';
+
     contextMenu.classList.remove('hidden');
-    contextMenu.style.left = `${x}px`;
-    contextMenu.style.top = `${y}px`;
+
+    // Use smart positioning
+    smartPosition(contextMenu, x, y);
     
     deleteEveryoneBtn.classList.toggle('hidden', !isSent);
     reactionsOverlay.classList.add('hidden');
 };
+
+const handleReply = (msgId, text) => {
+    replyingToId = msgId;
+    replyingToText = text;
+
+    // Show UI indicator above input
+    let previewBox = document.getElementById('reply-preview-box');
+    if (!previewBox) {
+        previewBox = document.createElement('div');
+        previewBox.id = 'reply-preview-box';
+        previewBox.style.padding = '8px 15px';
+        previewBox.style.backgroundColor = 'var(--bg-card)';
+        previewBox.style.borderTop = '2px solid var(--border-sidebar)';
+        previewBox.style.borderLeft = '2px solid var(--border-sidebar)';
+        previewBox.style.borderRight = '2px solid var(--border-sidebar)';
+        previewBox.style.borderTopLeftRadius = '16px';
+        previewBox.style.borderTopRightRadius = '16px';
+        previewBox.style.fontSize = '0.85rem';
+        previewBox.style.display = 'flex';
+        previewBox.style.justifyContent = 'space-between';
+        previewBox.style.alignItems = 'center';
+
+        const textSpan = document.createElement('span');
+        textSpan.id = 'reply-preview-text';
+        textSpan.style.opacity = '0.8';
+        textSpan.style.whiteSpace = 'nowrap';
+        textSpan.style.overflow = 'hidden';
+        textSpan.style.textOverflow = 'ellipsis';
+        textSpan.style.marginRight = '10px';
+        previewBox.appendChild(textSpan);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.style.background = 'none';
+        closeBtn.style.border = 'none';
+        closeBtn.style.fontSize = '1.2rem';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.color = 'var(--text-primary)';
+        closeBtn.onclick = () => {
+            replyingToId = null;
+            replyingToText = null;
+            previewBox.remove();
+        };
+        previewBox.appendChild(closeBtn);
+
+        // Insert right above message input area
+        const inputArea = document.querySelector('.message-input-area');
+        inputArea.parentNode.insertBefore(previewBox, inputArea);
+    }
+
+    document.getElementById('reply-preview-text').textContent = `Replying to: ${text}`;
+    messageInput.focus();
+};
+
+replyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    contextMenu.classList.add('hidden');
+    handleReply(contextMessageId, contextMessageText);
+});
 
 document.addEventListener('click', () => {
     contextMenu.classList.add('hidden');
@@ -418,12 +542,24 @@ export const setupChatSystem = (currentUid) => {
         setTypingStatus(false);
         
         try {
-            await addDoc(collection(db, "chats", chatId, "messages"), {
+            const msgData = {
                 text: text,
                 senderId: currentUid,
                 timestamp: serverTimestamp(),
                 hiddenFrom: []
-            });
+            };
+
+            if (replyingToId) {
+                msgData.replyToId = replyingToId;
+                msgData.replyToText = replyingToText;
+
+                replyingToId = null;
+                replyingToText = null;
+                const existingPreview = document.getElementById('reply-preview-box');
+                if (existingPreview) existingPreview.remove();
+            }
+
+            await addDoc(collection(db, "chats", chatId, "messages"), msgData);
         } catch (error) {
             console.error("Error sending message: ", error);
         }
