@@ -13,6 +13,7 @@ import {
     doc,
     setDoc,
     arrayUnion,
+    where,
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -29,6 +30,18 @@ const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 const searchUsers = document.getElementById('search-users');
 const typingIndicator = document.getElementById('typing-indicator');
+
+// Edit Elements
+const editMsgBtn = document.getElementById('edit-msg-btn');
+let editingMessageId = null;
+
+// Group Elements
+const createGroupBtn = document.getElementById('create-group-btn');
+const createGroupModal = document.getElementById('create-group-modal');
+const groupNameInput = document.getElementById('group-name-input');
+const groupUserSelectList = document.getElementById('group-user-select-list');
+const confirmCreateGroupBtn = document.getElementById('confirm-create-group-btn');
+const cancelCreateGroupBtn = document.getElementById('cancel-create-group-btn');
 
 // Sidebar toggle for mobile
 if (menuToggle) {
@@ -50,11 +63,14 @@ const deleteEveryoneBtn = document.getElementById('delete-for-everyone-btn');
 const reactOptionBtn = document.getElementById('react-btn');
 
 let activeChatUserId = null;
+let activeChatIsGroup = false;
 let activeChatObj = null;
 let typingObj = null;
 let allUsers = [];
+let allGroups = [];
 let contextMessageId = null;
 let typingTimeout = null;
+let selectedUsersForGroup = new Set();
 
 // Helper to create a consistent Chat ID for 1-on-1 chats
 const getChatId = (uid1, uid2) => {
@@ -62,38 +78,74 @@ const getChatId = (uid1, uid2) => {
 };
 
 /**
- * Load all registered users
+ * Load all registered users and groups
  */
 export const loadUsers = (currentUid) => {
-    const q = query(collection(db, "users"));
+    const qUsers = query(collection(db, "users"));
     
-    onSnapshot(q, (snapshot) => {
+    onSnapshot(qUsers, (snapshot) => {
         allUsers = snapshot.docs
             .map(doc => doc.data())
             .filter(user => user.uid !== currentUid);
         
-        renderUserList(allUsers);
+        renderUserList();
+    });
+
+    const qGroups = query(collection(db, "groups"), where("members", "array-contains", currentUid));
+    onSnapshot(qGroups, (snapshot) => {
+        allGroups = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderUserList();
     });
 };
 
-const renderUserList = (users) => {
+const renderUserList = (filteredUsers = null, filteredGroups = null) => {
     userList.innerHTML = '';
     
-    if(users.length === 0) {
-        userList.innerHTML = '<li style="padding: 15px; color: #666; font-size: 0.9em;">No users found.</li>';
+    const usersToRender = filteredUsers || allUsers;
+    const groupsToRender = filteredGroups || allGroups;
+
+    if(usersToRender.length === 0 && groupsToRender.length === 0) {
+        userList.innerHTML = '<li style="padding: 15px; color: #666; font-size: 0.9em;">No users or groups found.</li>';
         return;
     }
 
-    users.forEach(user => {
+    // Render Groups
+    groupsToRender.forEach(group => {
         const li = document.createElement('li');
-        li.className = `user-row ${activeChatUserId === user.uid ? 'active' : ''}`;
+        li.className = `user-row ${activeChatUserId === group.id && activeChatIsGroup ? 'active' : ''}`;
+
+        const name = group.name;
+        const photoURL = `https://ui-avatars.com/api/?name=${name}&background=random`;
+
+        li.innerHTML = `
+            <div class="photo-circle-small" style="background-image: url(${photoURL});"></div>
+            <span class="user-name-text">${name} (Group)</span>
+        `;
+
+        li.addEventListener('click', () => selectGroupChat(group));
+        userList.appendChild(li);
+    });
+
+    // Render Users
+    usersToRender.forEach(user => {
+        const li = document.createElement('li');
+        li.className = `user-row ${activeChatUserId === user.uid && !activeChatIsGroup ? 'active' : ''}`;
         
         const name = user.username || user.email.split('@')[0];
         const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${name}&background=random`;
         
+        let statusDot = '';
+        if (user.status === 'Online') {
+            statusDot = '<span class="status-dot online" style="margin-left: 5px;"></span>';
+        } else if (user.status === 'Away') {
+            statusDot = '<span class="status-dot" style="background-color: #F59E0B; margin-left: 5px;"></span>';
+        } else if (user.status === 'Do Not Disturb') {
+            statusDot = '<span class="status-dot" style="background-color: #EF4444; margin-left: 5px;"></span>';
+        }
+
         li.innerHTML = `
             <div class="photo-circle-small" style="background-image: url(${photoURL});"></div>
-            <span class="user-name-text">${name}</span>
+            <span class="user-name-text">${name}${statusDot}</span>
         `;
         
         li.addEventListener('click', () => selectUserChat(user));
@@ -106,8 +158,9 @@ const renderUserList = (users) => {
  */
 searchUsers.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase();
-    const filtered = allUsers.filter(user => (user.username || user.email).toLowerCase().includes(term));
-    renderUserList(filtered);
+    const filteredUsers = allUsers.filter(user => (user.username || user.email).toLowerCase().includes(term));
+    const filteredGroups = allGroups.filter(group => group.name.toLowerCase().includes(term));
+    renderUserList(filteredUsers, filteredGroups);
 });
 
 /**
@@ -115,11 +168,12 @@ searchUsers.addEventListener('input', (e) => {
  */
 const selectUserChat = (targetUser) => {
     activeChatUserId = targetUser.uid;
+    activeChatIsGroup = false;
     const currentUser = getCurrentUser();
     
     // Update Header
     activeChatTitle.textContent = `Chatting with ${targetUser.username || targetUser.email.split('@')[0]}`;
-    updateHeaderStatus(true);
+    updateHeaderStatus(targetUser.status || 'Offline');
     
     if (targetUser.photoURL) {
         activeChatPhoto.style.backgroundImage = `url(${targetUser.photoURL})`;
@@ -133,11 +187,45 @@ const selectUserChat = (targetUser) => {
     sendBtn.disabled = false;
     messageInput.focus();
     
-    renderUserList(allUsers);
+    renderUserList();
+
+    if(currentUser) {
+        listenForMessages(getChatId(currentUser.uid, targetUser.uid));
+        listenForTyping(getChatId(currentUser.uid, targetUser.uid), targetUser.uid);
+    }
+};
+
+/**
+ * Select a group to chat with
+ */
+const selectGroupChat = (group) => {
+    activeChatUserId = group.id;
+    activeChatIsGroup = true;
+    const currentUser = getCurrentUser();
+
+    // Update Header
+    activeChatTitle.textContent = `${group.name}`;
+    updateHeaderStatus(true); // Groups are "always online" conceptually here
+
+    const photoURL = `https://ui-avatars.com/api/?name=${group.name}&background=random`;
+    activeChatPhoto.style.backgroundImage = `url(${photoURL})`;
+    activeChatPhoto.classList.remove('hidden');
+
+    // Enable input
+    messageInput.disabled = false;
+    sendBtn.disabled = false;
+    messageInput.focus();
+
+    renderUserList();
     
     if(currentUser) {
-        listenForMessages(currentUser.uid, targetUser.uid);
-        listenForTyping(currentUser.uid, targetUser.uid);
+        listenForMessages(group.id);
+        // Disable typing indicator for groups for simplicity, or implement group typing
+        if (typingObj) {
+            typingObj();
+            typingObj = null;
+        }
+        typingIndicator.classList.add('hidden');
     }
 };
 
@@ -170,9 +258,9 @@ messageForm.addEventListener('submit', async (e) => {
 /**
  * Typing Indicator Logic
  */
-const listenForTyping = (currentUid, targetUid) => {
+const listenForTyping = (chatId, targetUid) => {
+    if (activeChatIsGroup) return; // Skip for groups for now
     if (typingObj) typingObj();
-    const chatId = getChatId(currentUid, targetUid);
     
     typingObj = onSnapshot(doc(db, "typing", chatId), (snapshot) => {
         if (snapshot.exists()) {
@@ -184,9 +272,13 @@ const listenForTyping = (currentUid, targetUid) => {
                 typingIndicator.classList.remove('hidden');
                 // Ghost Typing Logic: Show snippet of what they are typing
                 const ghostText = typeof status === 'string' ? status.substring(0, 40) : '';
-                typingIndicator.querySelector('span').textContent = ghostText 
+
+                // Clear previous content to allow animation re-triggering nicely
+                const span = typingIndicator.querySelector('span');
+                span.textContent = ghostText
                     ? `${targetName} is writing: "${ghostText}..."` 
                     : `${targetName} is typing...`;
+
             } else {
                 typingIndicator.classList.add('hidden');
             }
@@ -196,7 +288,7 @@ const listenForTyping = (currentUid, targetUid) => {
 
 const setTypingStatus = async (status) => {
     const currentUser = getCurrentUser();
-    if (!currentUser || !activeChatUserId) return;
+    if (!currentUser || !activeChatUserId || activeChatIsGroup) return;
     const chatId = getChatId(currentUser.uid, activeChatUserId);
     
     // Ghost Typing: send the actual text if status is true-ish
@@ -216,11 +308,11 @@ messageInput.addEventListener('input', () => {
 /**
  * Listen for messages
  */
-const listenForMessages = (currentUid, targetUid) => {
+const listenForMessages = (chatId) => {
     if(activeChatObj) activeChatObj();
+    const currentUid = getCurrentUser().uid;
     
-    const chatId = getChatId(currentUid, targetUid);
-    const messagesRef = collection(db, "chats", chatId, "messages");
+    const messagesRef = collection(db, activeChatIsGroup ? "groups" : "chats", chatId, "messages");
     const q = query(messagesRef, orderBy("timestamp", "asc"));
     
     activeChatObj = onSnapshot(q, (snapshot) => {
@@ -239,6 +331,12 @@ const listenForMessages = (currentUid, targetUid) => {
             // Grouping logic (same sender within 5 mins)
             const isGrouped = lastSenderId === msg.senderId && (msg.timestamp ? (msg.timestamp.toMillis() - lastTimestamp < 300000) : true);
             
+            // Mark unread messages as read if they aren't from the current user
+            if (!activeChatIsGroup && msg.senderId !== currentUid && !msg.read) {
+                const msgRef = doc(db, "chats", chatId, "messages", msgId);
+                updateDoc(msgRef, { read: true }).catch(console.error);
+            }
+
             renderMessage(msg, msgId, currentUid, isGrouped);
             
             lastSenderId = msg.senderId;
@@ -252,6 +350,13 @@ const listenForMessages = (currentUid, targetUid) => {
 const renderMessage = (msg, msgId, currentUid, isGrouped) => {
     const isSent = msg.senderId === currentUid;
     
+    // Identify sender for group chats
+    let senderName = '';
+    if (activeChatIsGroup && !isSent) {
+        const senderInfo = allUsers.find(u => u.uid === msg.senderId);
+        senderName = senderInfo ? (senderInfo.username || senderInfo.email.split('@')[0]) : 'Unknown';
+    }
+
     // Signature Fog Lookup
     let accentClass = '';
     const sender = allUsers.find(u => u.uid === msg.senderId) || (isSent ? getCurrentUser() : null);
@@ -269,6 +374,16 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         showContextMenu(e.clientX, e.clientY, msgId, isSent);
     };
     
+    if (senderName && !isGrouped) {
+        const senderSpan = document.createElement('div');
+        senderSpan.style.fontSize = '0.75rem';
+        senderSpan.style.fontWeight = 'bold';
+        senderSpan.style.marginBottom = '2px';
+        senderSpan.style.opacity = '0.8';
+        senderSpan.textContent = senderName;
+        div.appendChild(senderSpan);
+    }
+
     if (msg.type === 'image') {
         const img = document.createElement('img');
         img.src = msg.url;
@@ -278,6 +393,17 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
     } else {
         const textContent = document.createElement('div');
         textContent.textContent = msg.text;
+
+        if (msg.edited) {
+            const editedSpan = document.createElement('span');
+            editedSpan.style.fontSize = '0.7em';
+            editedSpan.style.opacity = '0.6';
+            editedSpan.style.marginLeft = '8px';
+            editedSpan.style.fontStyle = 'italic';
+            editedSpan.textContent = '(edited)';
+            textContent.appendChild(editedSpan);
+        }
+
         div.appendChild(textContent);
     }
     
@@ -305,7 +431,18 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
     
     if (msg.timestamp) {
         const date = msg.timestamp.toDate();
-        timeSpan.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        let timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        // Add Read Receipt indicator for sent messages
+        if (isSent && !activeChatIsGroup) { // simplified read receipts for 1-on-1 only
+            if (msg.read) {
+                timeStr += ' ✓✓'; // Double check for read
+            } else {
+                timeStr += ' ✓';  // Single check for sent/delivered
+            }
+        }
+
+        timeSpan.textContent = timeStr;
     } else {
         timeSpan.textContent = "Sending...";
     }
@@ -338,8 +475,16 @@ const smartPosition = (element, x, y) => {
 /**
  * Update Header Status (2D Flat)
  */
-const updateHeaderStatus = (isOnline) => {
-    activeChatStatus.innerHTML = `<span class="status-dot ${isOnline ? 'online' : 'offline'}"></span> ${isOnline ? 'Online' : 'Offline'}`;
+const updateHeaderStatus = (status) => {
+    if (status === true || status === 'Online') {
+        activeChatStatus.innerHTML = `<span class="status-dot online"></span> Online`;
+    } else if (status === 'Away') {
+        activeChatStatus.innerHTML = `<span class="status-dot" style="background-color: #F59E0B;"></span> Away`;
+    } else if (status === 'Do Not Disturb') {
+        activeChatStatus.innerHTML = `<span class="status-dot" style="background-color: #EF4444;"></span> Do Not Disturb`;
+    } else {
+        activeChatStatus.innerHTML = `<span class="status-dot offline"></span> Offline`;
+    }
 };
 
 /**
@@ -352,6 +497,7 @@ const showContextMenu = (x, y, msgId, isSent) => {
     contextMenu.style.top = `${y}px`;
     
     deleteEveryoneBtn.classList.toggle('hidden', !isSent);
+    editMsgBtn.classList.toggle('hidden', !isSent);
     reactionsOverlay.classList.add('hidden');
 };
 
@@ -371,8 +517,9 @@ reactOptionBtn.addEventListener('click', (e) => {
 const addReaction = async (msgId, emoji, delta = 1) => {
     const currentUser = getCurrentUser();
     if (!currentUser || !activeChatUserId) return;
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    const msgRef = doc(db, "chats", chatId, "messages", msgId);
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", msgId);
     
     // In a real app, you'd track WHICH user reacted.
     // For this MVP, we'll increment/decrement a counter.
@@ -390,8 +537,9 @@ document.querySelectorAll('.reaction-option').forEach(btn => {
 
 deleteMeBtn.onclick = async () => {
     const currentUser = getCurrentUser();
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    const msgRef = doc(db, "chats", chatId, "messages", contextMessageId);
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
     await updateDoc(msgRef, {
         hiddenFrom: arrayUnion(currentUser.uid)
     });
@@ -399,10 +547,113 @@ deleteMeBtn.onclick = async () => {
 
 deleteEveryoneBtn.onclick = async () => {
     const currentUser = getCurrentUser();
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    const msgRef = doc(db, "chats", chatId, "messages", contextMessageId);
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
     await deleteDoc(msgRef);
 };
+
+editMsgBtn.onclick = async () => {
+    const currentUser = getCurrentUser();
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
+
+    const msgDoc = await getDoc(msgRef);
+    if (msgDoc.exists()) {
+        const msgData = msgDoc.data();
+        if (msgData.type === 'text') {
+            messageInput.value = msgData.text;
+            editingMessageId = contextMessageId;
+            sendBtn.textContent = 'Save';
+            messageInput.focus();
+        }
+    }
+    contextMenu.classList.add('hidden');
+};
+
+/**
+ * Create Group Modal Logic
+ */
+createGroupBtn.addEventListener('click', () => {
+    createGroupModal.classList.remove('hidden-view');
+    createGroupModal.classList.add('active-view');
+    groupNameInput.value = '';
+    selectedUsersForGroup.clear();
+
+    // Populate users list for selection
+    groupUserSelectList.innerHTML = '';
+    allUsers.forEach(user => {
+        const li = document.createElement('li');
+        li.style.display = 'flex';
+        li.style.alignItems = 'center';
+        li.style.gap = '10px';
+        li.style.padding = '5px 0';
+        li.style.cursor = 'pointer';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = user.uid;
+
+        const name = user.username || user.email.split('@')[0];
+        const span = document.createElement('span');
+        span.textContent = name;
+        span.style.color = 'var(--text-primary)';
+
+        li.appendChild(checkbox);
+        li.appendChild(span);
+
+        li.addEventListener('click', (e) => {
+            if (e.target !== checkbox) {
+                checkbox.checked = !checkbox.checked;
+            }
+            if (checkbox.checked) {
+                selectedUsersForGroup.add(user.uid);
+            } else {
+                selectedUsersForGroup.delete(user.uid);
+            }
+        });
+
+        groupUserSelectList.appendChild(li);
+    });
+});
+
+cancelCreateGroupBtn.addEventListener('click', () => {
+    createGroupModal.classList.remove('active-view');
+    createGroupModal.classList.add('hidden-view');
+});
+
+confirmCreateGroupBtn.addEventListener('click', async () => {
+    const groupName = groupNameInput.value.trim();
+    if (!groupName) {
+        alert('Please enter a group name.');
+        return;
+    }
+    if (selectedUsersForGroup.size === 0) {
+        alert('Please select at least one user to add to the group.');
+        return;
+    }
+
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    const members = Array.from(selectedUsersForGroup);
+    members.push(currentUser.uid); // Add creator
+
+    try {
+        await addDoc(collection(db, "groups"), {
+            name: groupName,
+            members: members,
+            createdBy: currentUser.uid,
+            createdAt: serverTimestamp()
+        });
+        createGroupModal.classList.remove('active-view');
+        createGroupModal.classList.add('hidden-view');
+    } catch (err) {
+        console.error("Error creating group:", err);
+        alert('Failed to create group.');
+    }
+});
 
 /**
  * Setup Chat System
@@ -413,19 +664,35 @@ export const setupChatSystem = (currentUid) => {
         const text = messageInput.value.trim();
         if(!text || !activeChatUserId) return;
         
-        const chatId = getChatId(currentUid, activeChatUserId);
+        const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUid, activeChatUserId);
+        const collectionName = activeChatIsGroup ? "groups" : "chats";
+
         messageInput.value = '';
         setTypingStatus(false);
         
         try {
-            await addDoc(collection(db, "chats", chatId, "messages"), {
-                text: text,
-                senderId: currentUid,
-                timestamp: serverTimestamp(),
-                hiddenFrom: []
-            });
+            if (editingMessageId) {
+                // Edit existing message
+                const msgRef = doc(db, collectionName, chatId, "messages", editingMessageId);
+                await updateDoc(msgRef, {
+                    text: text,
+                    edited: true,
+                    editedAt: serverTimestamp()
+                });
+                editingMessageId = null;
+                sendBtn.textContent = 'Send';
+            } else {
+                // Send new message
+                await addDoc(collection(db, collectionName, chatId, "messages"), {
+                    text: text,
+                    type: 'text',
+                    senderId: currentUid,
+                    timestamp: serverTimestamp(),
+                    hiddenFrom: []
+                });
+            }
         } catch (error) {
-            console.error("Error sending message: ", error);
+            console.error("Error sending/editing message: ", error);
         }
     };
 };
