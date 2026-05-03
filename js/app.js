@@ -3,8 +3,6 @@ import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/fireba
 import { getCurrentUser } from './auth.js';
 
 // DOM Elements
-const authView = document.getElementById('auth-view');
-const chatView = document.getElementById('chat-view');
 const currentUserDisplay = document.getElementById('current-user-display');
 const messagesContainer = document.getElementById('messages-container');
 const myProfilePhoto = document.getElementById('my-profile-photo');
