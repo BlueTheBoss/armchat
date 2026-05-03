@@ -4,7 +4,6 @@ import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
-// TODO: Replace this with your app's Firebase project configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDmng1VgItR3cIqGTWymAY91X6OCrHWdlo",
   authDomain: "armchat-3b39b.firebaseapp.com",
