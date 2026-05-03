@@ -8,11 +8,11 @@ import {
     orderBy, 
     addDoc, 
     updateDoc,
-    getDoc,
     deleteDoc,
     doc,
     setDoc,
     arrayUnion,
+    increment,
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -517,12 +517,10 @@ const addReaction = async (msgId, emoji, delta = 1) => {
     
     // In a real app, you'd track WHICH user reacted.
     // For this MVP, we'll increment/decrement a counter.
-    const msgDoc = await getDoc(msgRef);
-    const reactions = msgDoc.data().reactions || {};
-    reactions[emoji] = (reactions[emoji] || 0) + delta;
-    if (reactions[emoji] < 0) reactions[emoji] = 0;
-
-    await updateDoc(msgRef, { reactions });
+    // Optimizing using increment() to avoid extra getDoc() roundtrip.
+    await updateDoc(msgRef, {
+        [`reactions.${emoji}`]: increment(delta)
+    });
 };
 
 document.querySelectorAll('.reaction-option').forEach(btn => {
