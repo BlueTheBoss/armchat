@@ -326,6 +326,8 @@ const listenForMessages = (chatId) => {
         let lastSenderId = null;
         let lastTimestamp = 0;
 
+        const fragment = document.createDocumentFragment();
+
         snapshot.forEach((doc) => {
             const msg = doc.data();
             const msgId = doc.id;
@@ -348,11 +350,12 @@ const listenForMessages = (chatId) => {
             lastTimestamp = msg.timestamp ? msg.timestamp.toMillis() : Date.now();
         });
         
+        messagesContainer.appendChild(fragment);
         scrollToBottom();
     });
 };
 
-const renderMessage = (msg, msgId, currentUid, isGrouped) => {
+const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesContainer) => {
     const isSent = msg.senderId === currentUid;
     
     // Identify sender for group chats
@@ -366,49 +369,41 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
     let accentClass = '';
     const sender = allUsers.find(u => u.uid === msg.senderId) || (isSent ? getCurrentUser() : null);
     if (sender && sender.accentColor) {
-        accentClass = `accent-${sender.accentColor}`;
+        return `accent-${sender.accentColor}`;
     }
+    return '';
+};
 
-    const div = document.createElement('div');
-    div.className = `message ${isSent ? 'sent' : 'received'} ${isGrouped ? 'grouped' : ''} ${accentClass}`;
-    div.dataset.id = msgId;
+const createReplyPreview = (msg) => {
+    const replyPreview = document.createElement('div');
+    replyPreview.className = 'reply-preview';
+    replyPreview.textContent = msg.replyToText;
 
-    // Right-click listener for context menu
-    div.oncontextmenu = (e) => {
-        e.preventDefault();
-        showContextMenu(e.clientX, e.clientY, msgId, isSent);
+    // Scroll to replied message on click
+    replyPreview.style.cursor = 'pointer';
+    replyPreview.onclick = () => {
+        const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
+        if (targetMsg) {
+            targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
+            targetMsg.style.transform = 'scale(1.05)';
+            targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
+            setTimeout(() => {
+                targetMsg.style.transform = '';
+                targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
+            }, 1000);
+        }
     };
-    
-    // Reply Preview
-    if (msg.replyToId && msg.replyToText) {
-        const replyPreview = document.createElement('div');
-        replyPreview.className = 'reply-preview';
-        replyPreview.textContent = msg.replyToText;
+    return replyPreview;
+};
 
-        // Scroll to replied message on click
-        replyPreview.style.cursor = 'pointer';
-        replyPreview.onclick = () => {
-            const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
-            if (targetMsg) {
-                targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
-                targetMsg.style.transform = 'scale(1.05)';
-                targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
-                setTimeout(() => {
-                    targetMsg.style.transform = '';
-                    targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
-                }, 1000);
-            }
-        };
-        div.appendChild(replyPreview);
-    }
-
+const createMessageContent = (msg) => {
     if (msg.type === 'image') {
         const img = document.createElement('img');
         img.src = msg.url;
         img.className = 'message-image';
         img.onclick = () => window.open(msg.url, '_blank');
-        div.appendChild(img);
+        return img;
     } else {
         const textContent = document.createElement('div');
         textContent.textContent = msg.text;
@@ -422,29 +417,29 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
             editedSpan.textContent = '(edited)';
             textContent.appendChild(editedSpan);
         }
-
-        div.appendChild(textContent);
+        return textContent;
     }
-    
-    // Render Reactions
-    if (msg.reactions) {
-        const reactionsDiv = document.createElement('div');
-        reactionsDiv.className = 'reactions-container';
-        Object.entries(msg.reactions).forEach(([emoji, count]) => {
-            if (count > 0) {
-                const span = document.createElement('span');
-                span.className = 'reaction-pill';
-                span.textContent = `${emoji} ${count}`;
-                span.onclick = (e) => {
-                    e.stopPropagation();
-                    addReaction(msgId, emoji, -1); // Simple toggle off
-                };
-                reactionsDiv.appendChild(span);
-            }
-        });
-        div.appendChild(reactionsDiv);
-    }
+};
 
+const createReactionsContainer = (msg, msgId) => {
+    const reactionsDiv = document.createElement('div');
+    reactionsDiv.className = 'reactions-container';
+    Object.entries(msg.reactions).forEach(([emoji, count]) => {
+        if (count > 0) {
+            const span = document.createElement('span');
+            span.className = 'reaction-pill';
+            span.textContent = `${emoji} ${count}`;
+            span.onclick = (e) => {
+                e.stopPropagation();
+                addReaction(msgId, emoji, -1); // Simple toggle off
+            };
+            reactionsDiv.appendChild(span);
+        }
+    });
+    return reactionsDiv;
+};
+
+const createTimeSpan = (msg, isSent) => {
     const timeSpan = document.createElement('span');
     timeSpan.className = 'message-time';
     timeSpan.style.display = 'flex';
@@ -477,14 +472,42 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         }
     }
     
-    div.appendChild(timeSpan);
+    return timeSpan;
+};
+
+const renderMessage = (msg, msgId, currentUid, isGrouped) => {
+    const isSent = msg.senderId === currentUid;
+
+    const accentClass = getSenderAccentClass(msg, isSent);
+
+    const div = document.createElement('div');
+    div.className = `message ${isSent ? 'sent' : 'received'} ${isGrouped ? 'grouped' : ''} ${accentClass}`;
+    div.dataset.id = msgId;
+
+    // Right-click listener for context menu
+    div.oncontextmenu = (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, msgId, isSent);
+    };
+
+    if (msg.replyToId && msg.replyToText) {
+        div.appendChild(createReplyPreview(msg));
+    }
+
+    div.appendChild(createMessageContent(msg));
+
+    if (msg.reactions) {
+        div.appendChild(createReactionsContainer(msg, msgId));
+    }
+
+    div.appendChild(createTimeSpan(msg, isSent));
 
     // Double click to reply
     div.addEventListener('dblclick', () => {
         handleReply(msgId, msg.text);
     });
 
-    messagesContainer.appendChild(div);
+    container.appendChild(div);
 };
 
 /**
