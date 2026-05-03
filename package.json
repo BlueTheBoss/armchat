@@ -1,0 +1,8 @@
+{
+  "name": "armchat",
+  "version": "1.0.0",
+  "description": "ArmChat Private 1-on-1 Messenger",
+  "scripts": {
+    "build": "./build.sh"
+  }
+}

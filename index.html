@@ -87,6 +87,14 @@
                                 <div id="my-profile-photo" class="photo-circle-small brutal-box"></div>
                                 <p id="current-user-display" class="current-user-menu"></p>
                             </div>
+                            <div class="menu-item brutal-border-bottom">
+                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">STATUS</p>
+                                <select id="user-status-select" class="brutal-input" style="padding: 5px; font-size: 0.8rem;">
+                                    <option value="Online">🟢 Online</option>
+                                    <option value="Away">🟡 Away</option>
+                                    <option value="Do Not Disturb">🔴 Do Not Disturb</option>
+                                </select>
+                            </div>
                             <button id="change-photo-btn" class="menu-item brutal-border-bottom">Update Photo</button>
                             <input type="file" id="change-photo-input" accept="image/*" hidden>
                             <button type="button" class="theme-toggle-btn menu-item brutal-border-bottom">DARK MODE</button>
@@ -104,14 +112,32 @@
                     </div>
                 </div>
                 
-                <div class="user-search">
+                <div class="user-search" style="display: flex; gap: 5px;">
                     <input type="text" id="search-users" class="brutal-input" placeholder="Search users...">
+                    <button id="create-group-btn" class="brutal-btn small-btn primary" title="Create Group">+</button>
                 </div>
                 
                 <ul id="user-list" class="user-list">
                     <!-- Users get populated here -->
                 </ul>
             </aside>
+
+            <!-- Create Group Modal -->
+            <div id="create-group-modal" class="view hidden-view" style="position: absolute; top: 0; left: 0; z-index: 10000; background: rgba(0,0,0,0.5);">
+                <div class="auth-card brutal-box" style="margin: auto;">
+                    <h2 class="brand-title-extra-small" style="margin-bottom: 15px;">Create Group</h2>
+                    <input type="text" id="group-name-input" class="brutal-input" placeholder="Group Name" style="margin-bottom: 15px;">
+                    <div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px; border: 2px solid var(--border-box); padding: 10px; background: var(--bg-page);">
+                        <ul id="group-user-select-list" style="list-style: none; padding: 0;">
+                            <!-- Users for selection go here -->
+                        </ul>
+                    </div>
+                    <div class="action-buttons">
+                        <button id="confirm-create-group-btn" class="brutal-btn primary">Create</button>
+                        <button id="cancel-create-group-btn" class="brutal-btn secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Main Chat Area -->
             <main class="chat-area brutal-box">
