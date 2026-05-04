@@ -121,6 +121,32 @@ export const initApp = () => {
             }
         };
     }
+
+    initNotificationBanner();
+};
+
+const initNotificationBanner = () => {
+    const banner = getEl('notification-banner');
+    const enableBtn = getEl('enable-notifications-btn');
+    const closeBtn = getEl('close-notif-banner');
+
+    if (!banner) return;
+
+    if (Notification.permission === 'default') {
+        banner.classList.remove('hidden');
+    }
+
+    enableBtn.onclick = async () => {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            banner.classList.add('hidden');
+            new Notification("ArmChat", { body: "Brutal notifications enabled!" });
+        }
+    };
+
+    closeBtn.onclick = () => {
+        banner.classList.add('hidden');
+    };
 };
 
 // Exported State Management

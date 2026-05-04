@@ -4,6 +4,7 @@ import {
     onSnapshot, 
     orderBy, 
     addDoc, 
+    setDoc,
     updateDoc,
     deleteDoc,
     doc,
@@ -31,10 +32,7 @@ let heartbeatInterval = null;
 // Sound
 const notificationSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
 
-// Notification Permission
-if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-    Notification.requestPermission();
-}
+// Notification Permission managed by banner in app.js
 let allUsers = [];
 let allUsersMap = new Map();
 let allGroups = [];
@@ -131,10 +129,13 @@ const startHeartbeat = (uid) => {
 
 const updateUserOrderAndRender = () => {
     allUsers.sort((a, b) => {
-        const chatId = getChatId(getCurrentUser()?.uid, a.uid);
-        const meta = chatMetadata.get(chatId);
-        const timeA = meta?.lastMessageAt?.toMillis() || a.lastMessageAt?.toMillis() || 0;
-        const timeB = meta?.lastMessageAt?.toMillis() || b.lastMessageAt?.toMillis() || 0;
+        const curUid = getCurrentUser()?.uid;
+        const metaA = chatMetadata.get(getChatId(curUid, a.uid));
+        const metaB = chatMetadata.get(getChatId(curUid, b.uid));
+        
+        const timeA = metaA?.lastMessageAt?.toMillis?.() || metaA?.lastMessageAt || a.lastMessageAt?.toMillis?.() || 0;
+        const timeB = metaB?.lastMessageAt?.toMillis?.() || metaB?.lastMessageAt || b.lastMessageAt?.toMillis?.() || 0;
+        
         if (timeA !== timeB) return timeB - timeA;
         if (a.status === 'Online' && b.status !== 'Online') return -1;
         return (a.username || a.email).localeCompare(b.username || b.email);
@@ -153,6 +154,7 @@ const renderUserList = (filteredUsers = null, filteredGroups = null) => {
     const userList = getEl('user-list');
     if (!userList) return;
     
+    const curUid = getCurrentUser()?.uid;
     userList.innerHTML = '';
     const usersToRender = filteredUsers || allUsers;
     const groupsToRender = filteredGroups || allGroups;
@@ -168,8 +170,10 @@ const renderUserList = (filteredUsers = null, filteredGroups = null) => {
         li.innerHTML = `
             <div class="photo-circle-small" style="background-image: url(https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=random&color=fff&bold=true);"></div>
             <div class="user-info-stack" style="flex: 1;">
-                <p class="user-name-text" style="font-weight: 800; font-size: 1.05rem;">${group.name}</p>
-                <p class="user-status-text" style="font-size: 0.8rem; opacity: 0.7;">Group Chat</p>
+                <p class="user-name-text">${group.name}</p>
+                <p class="user-status-text">
+                    ${group.lastMessageText ? (group.lastSenderId === curUid ? 'You: ' : '') + group.lastMessageText : 'Group Chat'}
+                </p>
             </div>
         `;
         li.onclick = () => selectGroupChat(group);
@@ -185,13 +189,22 @@ const renderUserList = (filteredUsers = null, filteredGroups = null) => {
         
         li.innerHTML = `
             <div class="photo-circle-small" style="background-image: url(${photo}); position: relative;">
-                <span class="status-indicator-mini ${isOnline ? 'online' : 'offline'}" style="position: absolute; bottom: 0; right: 0; width: 12px; height: 12px; border: 2.5px solid var(--border-box); border-radius: 50%; background: ${isOnline ? 'var(--accent-emerald)' : '#999'};"></span>
+                <span class="status-indicator-mini ${isOnline ? 'online' : 'offline'}"></span>
             </div>
             <div class="user-info-stack" style="flex: 1;">
-                <p class="user-name-text" style="font-weight: 800; font-size: 1.05rem;">${name}</p>
-                <p class="user-status-text" style="font-size: 0.8rem; opacity: 0.7;">${user.status || 'Offline'}</p>
+                <p class="user-name-text">${name}</p>
+                <p class="user-status-text">
+                    ${(() => {
+                        const chatId = getChatId(curUid, user.uid);
+                        const meta = chatMetadata.get(chatId);
+                        if (meta?.lastMessageText) {
+                            return (meta.lastSenderId === curUid ? 'You: ' : '') + meta.lastMessageText;
+                        }
+                        return user.status || 'Offline';
+                    })()}
+                </p>
             </div>
-            ${user.unreadCount ? `<span class="unread-badge" style="background: var(--accent-crimson); color: white; padding: 4px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 900; border: 2px solid var(--border-box);">${user.unreadCount}</span>` : ''}
+            ${user.unreadCount ? `<span class="unread-badge">${user.unreadCount}</span>` : ''}
         `;
         li.onclick = () => selectUserChat(user);
         userList.appendChild(li);
@@ -220,9 +233,17 @@ const selectUserChat = (targetUser) => {
     
     enableInput();
     renderUserList();
-    listenForMessages(getChatId(currentUser.uid, targetUser.uid));
-    listenForTyping(getChatId(currentUser.uid, targetUser.uid));
-    listenForPins(getChatId(currentUser.uid, targetUser.uid));
+    
+    const chatId = getChatId(currentUser.uid, targetUser.uid);
+    // Ensure chat metadata doc exists for sorting/previews
+    setDoc(doc(db, "chats", chatId), { 
+        members: [currentUser.uid, targetUser.uid],
+        type: 'private'
+    }, { merge: true }).catch(err => console.warn("Meta update failed:", err));
+
+    listenForMessages(chatId);
+    listenForTyping(chatId);
+    listenForPins(chatId);
 };
 
 const selectGroupChat = (group) => {
@@ -240,6 +261,12 @@ const selectGroupChat = (group) => {
 
     enableInput();
     renderUserList();
+
+    // Ensure group metadata doc exists for sorting
+    setDoc(doc(db, "groups", group.id), { 
+        members: arrayUnion(currentUser.uid)
+    }, { merge: true }).catch(err => console.warn("Group meta update failed:", err));
+
     listenForMessages(group.id);
     listenForTyping(group.id);
     listenForPins(group.id);
@@ -350,11 +377,12 @@ const renderMessage = (msg, msgId, currentUid, isGrouped, container) => {
     // Reactions
     if (msg.reactions) {
         const reactionBox = document.createElement('div');
-        reactionBox.style = "display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap;";
+        reactionBox.className = 'reaction-box';
         Object.entries(msg.reactions).forEach(([emoji, uids]) => {
             if (uids.length > 0) {
                 const pill = document.createElement('span');
-                pill.style = `background: var(--bg-card); border: 2px solid var(--border-box); padding: 2px 6px; border-radius: 8px; font-size: 0.75rem; font-weight: 800; cursor: pointer;`;
+                const hasReacted = uids.includes(currentUid);
+                pill.className = `reaction-pill ${hasReacted ? 'active' : ''}`;
                 pill.textContent = `${emoji} ${uids.length}`;
                 pill.onclick = (e) => { e.stopPropagation(); toggleReaction(msgId, emoji); };
                 reactionBox.appendChild(pill);
@@ -487,8 +515,25 @@ export const setupChatSystem = (currentUid) => {
             await updateDoc(doc(db, collectionName, chatId, "messages", editId), { text: text, edited: true });
         } else {
             await addDoc(collection(db, collectionName, chatId, "messages"), msgData);
+            
+            // Update Chat/Group Metadata for Sorting
             const ref = doc(db, collectionName, chatId);
-            await updateDoc(ref, { lastMessageAt: serverTimestamp() });
+            const metadata = { 
+                lastMessageAt: Date.now(), // Use local time for immediate local sorting
+                lastMessageText: text,
+                lastSenderId: user.uid
+            };
+            
+            if (!activeChatIsGroup) {
+                metadata.members = [user.uid, activeChatUserId];
+            }
+            
+            // Update local map for instant feedback
+            chatMetadata.set(chatId, metadata);
+            updateUserOrderAndRender();
+
+            // Sync to Firestore
+            setDoc(ref, { ...metadata, lastMessageAt: serverTimestamp() }, { merge: true });
         }
 
         replyingToId = null;
