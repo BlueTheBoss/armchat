@@ -99,6 +99,8 @@ const renderUserList = (users) => {
         return;
     }
 
+    const fragment = document.createDocumentFragment();
+
     users.forEach(user => {
         const li = document.createElement('li');
         li.className = `user-row ${activeChatUserId === user.uid ? 'active' : ''}`;
@@ -112,8 +114,10 @@ const renderUserList = (users) => {
         `;
         
         li.addEventListener('click', () => selectUserChat(user));
-        userList.appendChild(li);
+        fragment.appendChild(li);
     });
+
+    userList.appendChild(fragment);
 };
 
 /**
