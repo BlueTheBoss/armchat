@@ -162,8 +162,10 @@ const renderUserList = (filteredUsers = null, filteredGroups = null) => {
         li.appendChild(nameSpan);
         
         li.addEventListener('click', () => selectUserChat(user));
-        userList.appendChild(li);
+        fragment.appendChild(li);
     });
+
+    userList.appendChild(fragment);
 };
 
 /**
