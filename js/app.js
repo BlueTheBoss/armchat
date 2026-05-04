@@ -3,8 +3,6 @@ import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/fireba
 import { getCurrentUser } from './auth.js';
 
 // DOM Elements
-const authView = document.getElementById('auth-view');
-const chatView = document.getElementById('chat-view');
 const currentUserDisplay = document.getElementById('current-user-display');
 const messagesContainer = document.getElementById('messages-container');
 const myProfilePhoto = document.getElementById('my-profile-photo');
@@ -12,6 +10,7 @@ const logoButton = document.getElementById('logo-button');
 const profileMenu = document.getElementById('profile-menu');
 const changePhotoBtn = document.getElementById('change-photo-btn');
 const changePhotoInput = document.getElementById('change-photo-input');
+const userStatusSelect = document.getElementById('user-status-select');
 
 // Initialize Theme on Load
 document.addEventListener('DOMContentLoaded', () => {
@@ -51,7 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Logo Menu Toggle
     if (logoButton) {
         logoButton.addEventListener('click', (e) => {
-            if (e.target.closest('.menu-item')) return;
+            if (e.target.id === 'user-status-select') return;
+            if (e.target.closest('.menu-item') && e.target.tagName !== 'BUTTON' && !e.target.classList.contains('swatch')) return;
             e.stopPropagation();
             profileMenu.classList.toggle('hidden');
         });
@@ -79,7 +79,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // User Status Update
+    if (userStatusSelect) {
+        userStatusSelect.addEventListener('change', async (e) => {
+            const user = getCurrentUser();
+            if (user) {
+                try {
+                    await updateDoc(doc(db, "users", user.uid), { status: e.target.value });
+                } catch (err) {
+                    console.error("Failed to update status", err);
+                }
+            }
+        });
+    }
 });
+
+export const updateStatusSelect = (status) => {
+    if (userStatusSelect && status) {
+        userStatusSelect.value = status;
+    }
+}
 
 /**
  * Theme Management (Midnight Fog)

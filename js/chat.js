@@ -8,11 +8,11 @@ import {
     orderBy, 
     addDoc, 
     updateDoc,
-    getDoc,
     deleteDoc,
     doc,
     setDoc,
     arrayUnion,
+    increment,
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -29,6 +29,18 @@ const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
 const searchUsers = document.getElementById('search-users');
 const typingIndicator = document.getElementById('typing-indicator');
+
+// Edit Elements
+const editMsgBtn = document.getElementById('edit-msg-btn');
+let editingMessageId = null;
+
+// Group Elements
+const createGroupBtn = document.getElementById('create-group-btn');
+const createGroupModal = document.getElementById('create-group-modal');
+const groupNameInput = document.getElementById('group-name-input');
+const groupUserSelectList = document.getElementById('group-user-select-list');
+const confirmCreateGroupBtn = document.getElementById('confirm-create-group-btn');
+const cancelCreateGroupBtn = document.getElementById('cancel-create-group-btn');
 
 // Sidebar toggle for mobile
 if (menuToggle) {
@@ -53,14 +65,18 @@ const reactOptionBtn = document.getElementById('react-btn');
 const replyBtn = document.getElementById('reply-btn');
 
 let activeChatUserId = null;
+let activeChatIsGroup = false;
 let activeChatObj = null;
 let typingObj = null;
 let allUsers = [];
+let allUsersMap = new Map();
+let allGroups = [];
 let contextMessageId = null;
 let contextMessageText = null;
 let replyingToId = null;
 let replyingToText = null;
 let typingTimeout = null;
+let selectedUsersForGroup = new Set();
 
 // Debounce helper
 const debounce = (func, delay) => {
@@ -77,41 +93,73 @@ const getChatId = (uid1, uid2) => {
 };
 
 /**
- * Load all registered users
+ * Load all registered users and groups
  */
 export const loadUsers = (currentUid) => {
-    const q = query(collection(db, "users"));
+    const qUsers = query(collection(db, "users"));
     
-    onSnapshot(q, (snapshot) => {
+    onSnapshot(qUsers, (snapshot) => {
         allUsers = snapshot.docs
             .map(doc => doc.data())
             .filter(user => user.uid !== currentUid);
+        allUsersMap = new Map(allUsers.map(u => [u.uid, u]));
         
-        renderUserList(allUsers);
+        renderUserList();
+    });
+
+    const qGroups = query(collection(db, "groups"), where("members", "array-contains", currentUid));
+    onSnapshot(qGroups, (snapshot) => {
+        allGroups = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderUserList();
     });
 };
 
-const renderUserList = (users) => {
+const renderUserList = (filteredUsers = null, filteredGroups = null) => {
     userList.innerHTML = '';
     
-    if(users.length === 0) {
-        userList.innerHTML = '<li style="padding: 15px; color: #666; font-size: 0.9em;">No users found.</li>';
+    const usersToRender = filteredUsers || allUsers;
+    const groupsToRender = filteredGroups || allGroups;
+
+    if(usersToRender.length === 0 && groupsToRender.length === 0) {
+        userList.innerHTML = '<li style="padding: 15px; color: #666; font-size: 0.9em;">No users or groups found.</li>';
         return;
     }
 
-    const fragment = document.createDocumentFragment();
-
-    users.forEach(user => {
+    // Render Groups
+    groupsToRender.forEach(group => {
         const li = document.createElement('li');
-        li.className = `user-row ${activeChatUserId === user.uid ? 'active' : ''}`;
-        
-        const name = user.username || user.email.split('@')[0];
-        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${name}&background=random`;
-        
+        li.className = `user-row ${activeChatUserId === group.id && activeChatIsGroup ? 'active' : ''}`;
+
+        const name = group.name;
+        const photoURL = `https://ui-avatars.com/api/?name=${name}&background=random`;
+
         li.innerHTML = `
             <div class="photo-circle-small" style="background-image: url(${photoURL});"></div>
-            <span class="user-name-text">${name}</span>
+            <span class="user-name-text">${name} (Group)</span>
         `;
+
+        li.addEventListener('click', () => selectGroupChat(group));
+        userList.appendChild(li);
+    });
+
+    // Render Users
+    usersToRender.forEach(user => {
+        const li = document.createElement('li');
+        li.className = `user-row ${activeChatUserId === user.uid && !activeChatIsGroup ? 'active' : ''}`;
+        
+        const name = user.username || user.email.split('@')[0];
+        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+        
+        const photoDiv = document.createElement('div');
+        photoDiv.className = 'photo-circle-small';
+        photoDiv.style.backgroundImage = `url(${photoURL})`;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'user-name-text';
+        nameSpan.textContent = name;
+
+        li.appendChild(photoDiv);
+        li.appendChild(nameSpan);
         
         li.addEventListener('click', () => selectUserChat(user));
         fragment.appendChild(li);
@@ -134,11 +182,12 @@ searchUsers.addEventListener('input', debounce((e) => {
  */
 const selectUserChat = (targetUser) => {
     activeChatUserId = targetUser.uid;
+    activeChatIsGroup = false;
     const currentUser = getCurrentUser();
     
     // Update Header
     activeChatTitle.textContent = `Chatting with ${targetUser.username || targetUser.email.split('@')[0]}`;
-    updateHeaderStatus(true);
+    updateHeaderStatus(targetUser.status || 'Offline');
     
     if (targetUser.photoURL) {
         activeChatPhoto.style.backgroundImage = `url(${targetUser.photoURL})`;
@@ -152,11 +201,45 @@ const selectUserChat = (targetUser) => {
     sendBtn.disabled = false;
     messageInput.focus();
     
-    renderUserList(allUsers);
+    renderUserList();
+
+    if(currentUser) {
+        listenForMessages(getChatId(currentUser.uid, targetUser.uid));
+        listenForTyping(getChatId(currentUser.uid, targetUser.uid), targetUser.uid);
+    }
+};
+
+/**
+ * Select a group to chat with
+ */
+const selectGroupChat = (group) => {
+    activeChatUserId = group.id;
+    activeChatIsGroup = true;
+    const currentUser = getCurrentUser();
+
+    // Update Header
+    activeChatTitle.textContent = `${group.name}`;
+    updateHeaderStatus(true); // Groups are "always online" conceptually here
+
+    const photoURL = `https://ui-avatars.com/api/?name=${group.name}&background=random`;
+    activeChatPhoto.style.backgroundImage = `url(${photoURL})`;
+    activeChatPhoto.classList.remove('hidden');
+
+    // Enable input
+    messageInput.disabled = false;
+    sendBtn.disabled = false;
+    messageInput.focus();
+
+    renderUserList();
     
     if(currentUser) {
-        listenForMessages(currentUser.uid, targetUser.uid);
-        listenForTyping(currentUser.uid, targetUser.uid);
+        listenForMessages(group.id);
+        // Disable typing indicator for groups for simplicity, or implement group typing
+        if (typingObj) {
+            typingObj();
+            typingObj = null;
+        }
+        typingIndicator.classList.add('hidden');
     }
 };
 
@@ -164,9 +247,9 @@ const selectUserChat = (targetUser) => {
 /**
  * Typing Indicator Logic
  */
-const listenForTyping = (currentUid, targetUid) => {
+const listenForTyping = (chatId, targetUid) => {
+    if (activeChatIsGroup) return; // Skip for groups for now
     if (typingObj) typingObj();
-    const chatId = getChatId(currentUid, targetUid);
     
     typingObj = onSnapshot(doc(db, "typing", chatId), (snapshot) => {
         if (snapshot.exists()) {
@@ -179,26 +262,24 @@ const listenForTyping = (currentUid, targetUid) => {
                 // Ghost Typing Logic: Show snippet of what they are typing
                 const ghostText = typeof status === 'string' ? status.substring(0, 40) : '';
 
+                const typingSpan = typingIndicator.querySelector('span');
+                typingSpan.textContent = ''; // Clear previous
+
+                const targetNameText = activeChatTitle.textContent.replace('Chatting with ', '');
+
+                if (ghostText) {
+                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is writing: "${ghostText}"`));
+                } else {
+                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is typing`));
+                }
+
                 // Animated dots
-                const typingDots = `<span style="animation: typing 1.4s infinite 0.2s;">.</span><span style="animation: typing 1.4s infinite 0.4s;">.</span><span style="animation: typing 1.4s infinite 0.6s;">.</span>`;
-
-                // Escape text to prevent XSS
-                const escapeHTML = (str) => {
-                    return str.replace(/[&<>'"]/g,
-                        tag => ({
-                            '&': '&amp;',
-                            '<': '&lt;',
-                            '>': '&gt;',
-                            "'": '&#39;',
-                            '"': '&quot;'
-                        }[tag] || tag)
-                    );
-                };
-                const safeGhostText = escapeHTML(ghostText);
-
-                typingIndicator.querySelector('span').innerHTML = safeGhostText
-                    ? `${escapeHTML(targetName)} is writing: "${safeGhostText}${typingDots}"`
-                    : `${escapeHTML(targetName)} is typing${typingDots}`;
+                [0.2, 0.4, 0.6].forEach(delay => {
+                    const dot = document.createElement('span');
+                    dot.textContent = '.';
+                    dot.style.animation = `typing 1.4s infinite ${delay}s`;
+                    typingSpan.appendChild(dot);
+                });
 
                 // Ensure dynamic keyframes exist
                 if (!document.getElementById('typing-keyframes')) {
@@ -216,7 +297,7 @@ const listenForTyping = (currentUid, targetUid) => {
 
 const setTypingStatus = async (status) => {
     const currentUser = getCurrentUser();
-    if (!currentUser || !activeChatUserId) return;
+    if (!currentUser || !activeChatUserId || activeChatIsGroup) return;
     const chatId = getChatId(currentUser.uid, activeChatUserId);
     
     // Ghost Typing: send the actual text if status is true-ish
@@ -236,11 +317,11 @@ messageInput.addEventListener('input', () => {
 /**
  * Listen for messages
  */
-const listenForMessages = (currentUid, targetUid) => {
+const listenForMessages = (chatId) => {
     if(activeChatObj) activeChatObj();
+    const currentUid = getCurrentUser().uid;
     
-    const chatId = getChatId(currentUid, targetUid);
-    const messagesRef = collection(db, "chats", chatId, "messages");
+    const messagesRef = collection(db, activeChatIsGroup ? "groups" : "chats", chatId, "messages");
     const q = query(messagesRef, orderBy("timestamp", "asc"));
     
     activeChatObj = onSnapshot(q, (snapshot) => {
@@ -248,6 +329,8 @@ const listenForMessages = (currentUid, targetUid) => {
         
         let lastSenderId = null;
         let lastTimestamp = 0;
+
+        const fragment = document.createDocumentFragment();
 
         snapshot.forEach((doc) => {
             const msg = doc.data();
@@ -259,91 +342,108 @@ const listenForMessages = (currentUid, targetUid) => {
             // Grouping logic (same sender within 5 mins)
             const isGrouped = lastSenderId === msg.senderId && (msg.timestamp ? (msg.timestamp.toMillis() - lastTimestamp < 300000) : true);
             
+            // Mark unread messages as read if they aren't from the current user
+            if (!activeChatIsGroup && msg.senderId !== currentUid && !msg.read) {
+                const msgRef = doc(db, "chats", chatId, "messages", msgId);
+                updateDoc(msgRef, { read: true }).catch(console.error);
+            }
+
             renderMessage(msg, msgId, currentUid, isGrouped);
             
             lastSenderId = msg.senderId;
             lastTimestamp = msg.timestamp ? msg.timestamp.toMillis() : Date.now();
         });
         
+        messagesContainer.appendChild(fragment);
         scrollToBottom();
     });
 };
 
-const renderMessage = (msg, msgId, currentUid, isGrouped) => {
+const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesContainer) => {
     const isSent = msg.senderId === currentUid;
     
+    // Identify sender for group chats
+    let senderName = '';
+    if (activeChatIsGroup && !isSent) {
+        const senderInfo = allUsersMap.get(msg.senderId);
+        senderName = senderInfo ? (senderInfo.username || senderInfo.email.split('@')[0]) : 'Unknown';
+    }
+
     // Signature Fog Lookup
     let accentClass = '';
-    const sender = allUsers.find(u => u.uid === msg.senderId) || (isSent ? getCurrentUser() : null);
+    const sender = allUsersMap.get(msg.senderId) || (isSent ? getCurrentUser() : null);
     if (sender && sender.accentColor) {
-        accentClass = `accent-${sender.accentColor}`;
+        return `accent-${sender.accentColor}`;
     }
+    return '';
+};
 
-    const div = document.createElement('div');
-    div.className = `message ${isSent ? 'sent' : 'received'} ${isGrouped ? 'grouped' : ''} ${accentClass}`;
-    div.dataset.id = msgId;
+const createReplyPreview = (msg) => {
+    const replyPreview = document.createElement('div');
+    replyPreview.className = 'reply-preview';
+    replyPreview.textContent = msg.replyToText;
 
-    // Right-click listener for context menu
-    div.oncontextmenu = (e) => {
-        e.preventDefault();
-        showContextMenu(e.clientX, e.clientY, msgId, isSent);
+    // Scroll to replied message on click
+    replyPreview.style.cursor = 'pointer';
+    replyPreview.onclick = () => {
+        const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
+        if (targetMsg) {
+            targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
+            targetMsg.style.transform = 'scale(1.05)';
+            targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
+            setTimeout(() => {
+                targetMsg.style.transform = '';
+                targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
+            }, 1000);
+        }
     };
-    
-    // Reply Preview
-    if (msg.replyToId && msg.replyToText) {
-        const replyPreview = document.createElement('div');
-        replyPreview.className = 'reply-preview';
-        replyPreview.textContent = msg.replyToText;
+    return replyPreview;
+};
 
-        // Scroll to replied message on click
-        replyPreview.style.cursor = 'pointer';
-        replyPreview.onclick = () => {
-            const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
-            if (targetMsg) {
-                targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
-                targetMsg.style.transform = 'scale(1.05)';
-                targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
-                setTimeout(() => {
-                    targetMsg.style.transform = '';
-                    targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
-                }, 1000);
-            }
-        };
-        div.appendChild(replyPreview);
-    }
-
+const createMessageContent = (msg) => {
     if (msg.type === 'image') {
         const img = document.createElement('img');
         img.src = msg.url;
         img.className = 'message-image';
         img.onclick = () => window.open(msg.url, '_blank');
-        div.appendChild(img);
+        return img;
     } else {
         const textContent = document.createElement('div');
         textContent.textContent = msg.text;
-        div.appendChild(textContent);
-    }
-    
-    // Render Reactions
-    if (msg.reactions) {
-        const reactionsDiv = document.createElement('div');
-        reactionsDiv.className = 'reactions-container';
-        Object.entries(msg.reactions).forEach(([emoji, count]) => {
-            if (count > 0) {
-                const span = document.createElement('span');
-                span.className = 'reaction-pill';
-                span.textContent = `${emoji} ${count}`;
-                span.onclick = (e) => {
-                    e.stopPropagation();
-                    addReaction(msgId, emoji, -1); // Simple toggle off
-                };
-                reactionsDiv.appendChild(span);
-            }
-        });
-        div.appendChild(reactionsDiv);
-    }
 
+        if (msg.edited) {
+            const editedSpan = document.createElement('span');
+            editedSpan.style.fontSize = '0.7em';
+            editedSpan.style.opacity = '0.6';
+            editedSpan.style.marginLeft = '8px';
+            editedSpan.style.fontStyle = 'italic';
+            editedSpan.textContent = '(edited)';
+            textContent.appendChild(editedSpan);
+        }
+        return textContent;
+    }
+};
+
+const createReactionsContainer = (msg, msgId) => {
+    const reactionsDiv = document.createElement('div');
+    reactionsDiv.className = 'reactions-container';
+    Object.entries(msg.reactions).forEach(([emoji, count]) => {
+        if (count > 0) {
+            const span = document.createElement('span');
+            span.className = 'reaction-pill';
+            span.textContent = `${emoji} ${count}`;
+            span.onclick = (e) => {
+                e.stopPropagation();
+                addReaction(msgId, emoji, -1); // Simple toggle off
+            };
+            reactionsDiv.appendChild(span);
+        }
+    });
+    return reactionsDiv;
+};
+
+const createTimeSpan = (msg, isSent) => {
     const timeSpan = document.createElement('span');
     timeSpan.className = 'message-time';
     timeSpan.style.display = 'flex';
@@ -376,14 +476,42 @@ const renderMessage = (msg, msgId, currentUid, isGrouped) => {
         }
     }
     
-    div.appendChild(timeSpan);
+    return timeSpan;
+};
+
+const renderMessage = (msg, msgId, currentUid, isGrouped) => {
+    const isSent = msg.senderId === currentUid;
+
+    const accentClass = getSenderAccentClass(msg, isSent);
+
+    const div = document.createElement('div');
+    div.className = `message ${isSent ? 'sent' : 'received'} ${isGrouped ? 'grouped' : ''} ${accentClass}`;
+    div.dataset.id = msgId;
+
+    // Right-click listener for context menu
+    div.oncontextmenu = (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, msgId, isSent);
+    };
+
+    if (msg.replyToId && msg.replyToText) {
+        div.appendChild(createReplyPreview(msg));
+    }
+
+    div.appendChild(createMessageContent(msg));
+
+    if (msg.reactions) {
+        div.appendChild(createReactionsContainer(msg, msgId));
+    }
+
+    div.appendChild(createTimeSpan(msg, isSent));
 
     // Double click to reply
     div.addEventListener('dblclick', () => {
         handleReply(msgId, msg.text);
     });
 
-    messagesContainer.appendChild(div);
+    container.appendChild(div);
 };
 
 /**
@@ -411,7 +539,11 @@ const smartPosition = (element, x, y) => {
  * Update Header Status (2D Flat)
  */
 const updateHeaderStatus = (isOnline) => {
-    activeChatStatus.innerHTML = `<span class="status-dot ${isOnline ? 'online' : 'offline'}"></span> ${isOnline ? 'Online' : 'Offline'}`;
+    activeChatStatus.textContent = '';
+    const statusDot = document.createElement('span');
+    statusDot.className = `status-dot ${isOnline ? 'online' : 'offline'}`;
+    activeChatStatus.appendChild(statusDot);
+    activeChatStatus.appendChild(document.createTextNode(isOnline ? ' Online' : ' Offline'));
 };
 
 /**
@@ -430,6 +562,7 @@ const showContextMenu = (x, y, msgId, isSent) => {
     smartPosition(contextMenu, x, y);
     
     deleteEveryoneBtn.classList.toggle('hidden', !isSent);
+    editMsgBtn.classList.toggle('hidden', !isSent);
     reactionsOverlay.classList.add('hidden');
 };
 
@@ -464,7 +597,7 @@ const handleReply = (msgId, text) => {
         previewBox.appendChild(textSpan);
 
         const closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '&times;';
+        closeBtn.textContent = '×';
         closeBtn.style.background = 'none';
         closeBtn.style.border = 'none';
         closeBtn.style.fontSize = '1.2rem';
@@ -508,17 +641,16 @@ reactOptionBtn.addEventListener('click', (e) => {
 const addReaction = async (msgId, emoji, delta = 1) => {
     const currentUser = getCurrentUser();
     if (!currentUser || !activeChatUserId) return;
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    const msgRef = doc(db, "chats", chatId, "messages", msgId);
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", msgId);
     
     // In a real app, you'd track WHICH user reacted.
     // For this MVP, we'll increment/decrement a counter.
-    const msgDoc = await getDoc(msgRef);
-    const reactions = msgDoc.data().reactions || {};
-    reactions[emoji] = (reactions[emoji] || 0) + delta;
-    if (reactions[emoji] < 0) reactions[emoji] = 0;
-
-    await updateDoc(msgRef, { reactions });
+    // Optimizing using increment() to avoid extra getDoc() roundtrip.
+    await updateDoc(msgRef, {
+        [`reactions.${emoji}`]: increment(delta)
+    });
 };
 
 document.querySelectorAll('.reaction-option').forEach(btn => {
@@ -527,8 +659,9 @@ document.querySelectorAll('.reaction-option').forEach(btn => {
 
 deleteMeBtn.onclick = async () => {
     const currentUser = getCurrentUser();
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    const msgRef = doc(db, "chats", chatId, "messages", contextMessageId);
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
     await updateDoc(msgRef, {
         hiddenFrom: arrayUnion(currentUser.uid)
     });
@@ -536,10 +669,113 @@ deleteMeBtn.onclick = async () => {
 
 deleteEveryoneBtn.onclick = async () => {
     const currentUser = getCurrentUser();
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    const msgRef = doc(db, "chats", chatId, "messages", contextMessageId);
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
     await deleteDoc(msgRef);
 };
+
+editMsgBtn.onclick = async () => {
+    const currentUser = getCurrentUser();
+    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
+    const collectionName = activeChatIsGroup ? "groups" : "chats";
+    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
+
+    const msgDoc = await getDoc(msgRef);
+    if (msgDoc.exists()) {
+        const msgData = msgDoc.data();
+        if (msgData.type === 'text') {
+            messageInput.value = msgData.text;
+            editingMessageId = contextMessageId;
+            sendBtn.textContent = 'Save';
+            messageInput.focus();
+        }
+    }
+    contextMenu.classList.add('hidden');
+};
+
+/**
+ * Create Group Modal Logic
+ */
+createGroupBtn.addEventListener('click', () => {
+    createGroupModal.classList.remove('hidden-view');
+    createGroupModal.classList.add('active-view');
+    groupNameInput.value = '';
+    selectedUsersForGroup.clear();
+
+    // Populate users list for selection
+    groupUserSelectList.innerHTML = '';
+    allUsers.forEach(user => {
+        const li = document.createElement('li');
+        li.style.display = 'flex';
+        li.style.alignItems = 'center';
+        li.style.gap = '10px';
+        li.style.padding = '5px 0';
+        li.style.cursor = 'pointer';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = user.uid;
+
+        const name = user.username || user.email.split('@')[0];
+        const span = document.createElement('span');
+        span.textContent = name;
+        span.style.color = 'var(--text-primary)';
+
+        li.appendChild(checkbox);
+        li.appendChild(span);
+
+        li.addEventListener('click', (e) => {
+            if (e.target !== checkbox) {
+                checkbox.checked = !checkbox.checked;
+            }
+            if (checkbox.checked) {
+                selectedUsersForGroup.add(user.uid);
+            } else {
+                selectedUsersForGroup.delete(user.uid);
+            }
+        });
+
+        groupUserSelectList.appendChild(li);
+    });
+});
+
+cancelCreateGroupBtn.addEventListener('click', () => {
+    createGroupModal.classList.remove('active-view');
+    createGroupModal.classList.add('hidden-view');
+});
+
+confirmCreateGroupBtn.addEventListener('click', async () => {
+    const groupName = groupNameInput.value.trim();
+    if (!groupName) {
+        alert('Please enter a group name.');
+        return;
+    }
+    if (selectedUsersForGroup.size === 0) {
+        alert('Please select at least one user to add to the group.');
+        return;
+    }
+
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
+    const members = Array.from(selectedUsersForGroup);
+    members.push(currentUser.uid); // Add creator
+
+    try {
+        await addDoc(collection(db, "groups"), {
+            name: groupName,
+            members: members,
+            createdBy: currentUser.uid,
+            createdAt: serverTimestamp()
+        });
+        createGroupModal.classList.remove('active-view');
+        createGroupModal.classList.add('hidden-view');
+    } catch (err) {
+        console.error("Error creating group:", err);
+        alert('Failed to create group.');
+    }
+});
 
 /**
  * Setup Chat System
@@ -550,7 +786,9 @@ export const setupChatSystem = (currentUid) => {
         const text = messageInput.value.trim();
         if(!text || !activeChatUserId) return;
         
-        const chatId = getChatId(currentUid, activeChatUserId);
+        const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUid, activeChatUserId);
+        const collectionName = activeChatIsGroup ? "groups" : "chats";
+
         messageInput.value = '';
         setTypingStatus(false);
         
@@ -574,7 +812,7 @@ export const setupChatSystem = (currentUid) => {
 
             await addDoc(collection(db, "chats", chatId, "messages"), msgData);
         } catch (error) {
-            console.error("Error sending message: ", error);
+            console.error("Error sending/editing message: ", error);
         }
     };
 };

@@ -1,0 +1,17 @@
+{
+  "name": "armchat",
+  "version": "1.0.0",
+  "description": "ArmChat Private 1-on-1 Messenger",
+  "scripts": {
+    "build": "./build.sh",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.3",
+    "@jest/globals": "^30.3.0",
+    "babel-jest": "^30.3.0",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0"
+  }
+}
