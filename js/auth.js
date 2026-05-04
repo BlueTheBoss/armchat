@@ -7,8 +7,19 @@ import {
     signOut 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { switchView, updateCurrentUserDisplay, updateMyProfilePhoto, processImage, updateStatusSelect } from './app.js';
+import { 
+    switchView, 
+    updateCurrentUserDisplay, 
+    updateMyProfilePhoto, 
+    processImage, 
+    updateStatusSelect, 
+    setCurrentUser,
+    initApp
+} from './app.js';
 import { loadUsers, setupChatSystem } from './chat.js';
+
+// Initialize the App listeners
+initApp();
 
 // DOM Elements
 const authForm = document.getElementById('auth-form');
@@ -26,13 +37,12 @@ const usernameInput = document.getElementById('username');
 const photoInput = document.getElementById('profile-photo-input');
 const photoPreview = document.getElementById('setup-photo-preview');
 
-let currentUser = null;
 let currentPhotoFile = null;
 
 // Handle Auth State Changes
 onAuthStateChanged(auth, async (user) => {
+    setCurrentUser(user);
     if (user) {
-        currentUser = user;
         
         // Fetch user data to check for username
         const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -98,7 +108,8 @@ setupForm.addEventListener('submit', async (e) => {
 
         console.log('Updating user document in Firestore...');
         // Update Firestore
-        await updateDoc(doc(db, "users", currentUser.uid), {
+        const user = auth.currentUser;
+        await updateDoc(doc(db, "users", user.uid), {
             username: username,
             photoURL: photoURL
         });
@@ -199,5 +210,4 @@ logoutBtn.addEventListener('click', () => {
     });
 });
 
-export const getCurrentUser = () => currentUser;
 

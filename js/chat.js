@@ -1,6 +1,5 @@
 import { db } from './firebase-config.js';
-import { getCurrentUser } from './auth.js';
-import { scrollToBottom } from './app.js';
+import { getCurrentUser, scrollToBottom } from './app.js';
 import { 
     collection, 
     query, 
@@ -11,59 +10,17 @@ import {
     deleteDoc,
     doc,
     setDoc,
+    getDoc,
+    where,
     arrayUnion,
     increment,
     serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// DOM Elements
-const userList = document.getElementById('user-list');
-const sidebar = document.querySelector('.sidebar');
-const menuToggle = document.getElementById('menu-toggle');
-const activeChatTitle = document.getElementById('active-chat-title');
-const activeChatPhoto = document.getElementById('active-chat-photo');
-const activeChatStatus = document.getElementById('active-chat-status');
-const messagesContainer = document.getElementById('messages-container');
-const messageForm = document.getElementById('message-form');
-const messageInput = document.getElementById('message-input');
-const sendBtn = document.getElementById('send-btn');
-const searchUsers = document.getElementById('search-users');
-const typingIndicator = document.getElementById('typing-indicator');
+// Helper to get elements safely
+const getEl = (id) => document.getElementById(id);
 
-// Edit Elements
-const editMsgBtn = document.getElementById('edit-msg-btn');
-let editingMessageId = null;
-
-// Group Elements
-const createGroupBtn = document.getElementById('create-group-btn');
-const createGroupModal = document.getElementById('create-group-modal');
-const groupNameInput = document.getElementById('group-name-input');
-const groupUserSelectList = document.getElementById('group-user-select-list');
-const confirmCreateGroupBtn = document.getElementById('confirm-create-group-btn');
-const cancelCreateGroupBtn = document.getElementById('cancel-create-group-btn');
-
-// Sidebar toggle for mobile
-if (menuToggle) {
-    menuToggle.onclick = (e) => {
-        e.stopPropagation();
-        sidebar.classList.toggle('open');
-    };
-}
-document.addEventListener('click', () => {
-    if (window.innerWidth < 768) sidebar.classList.remove('open');
-});
-if (sidebar) sidebar.onclick = (e) => e.stopPropagation();
-
-// Context Menu Elements
-const contextMenu = document.getElementById('context-menu');
-const reactionsOverlay = document.getElementById('reactions-overlay');
-const deleteMeBtn = document.getElementById('delete-for-me-btn');
-const deleteEveryoneBtn = document.getElementById('delete-for-everyone-btn');
-const reactOptionBtn = document.getElementById('react-btn');
-
-// Context Menu Elements (Reply button now in HTML)
-const replyBtn = document.getElementById('reply-btn');
-
+// State
 let activeChatUserId = null;
 let activeChatIsGroup = false;
 let activeChatObj = null;
@@ -76,34 +33,37 @@ let contextMessageText = null;
 let replyingToId = null;
 let replyingToText = null;
 let typingTimeout = null;
+let editingMessageId = null;
 let selectedUsersForGroup = new Set();
 
-// Debounce helper
-const debounce = (func, delay) => {
-    let timeout;
-    return (...args) => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), delay);
-    };
+/**
+ * Initialization (runs immediately in module)
+ */
+const initSidebarHandlers = () => {
+    const menuToggle = getEl('menu-toggle');
+    const sidebar = document.querySelector('.sidebar');
+    if (menuToggle && sidebar) {
+        menuToggle.onclick = (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('open');
+        };
+        document.addEventListener('click', () => {
+            if (window.innerWidth < 768) sidebar.classList.remove('open');
+        });
+        sidebar.onclick = (e) => e.stopPropagation();
+    }
 };
-
-// Helper to create a consistent Chat ID for 1-on-1 chats
-const getChatId = (uid1, uid2) => {
-    return [uid1, uid2].sort().join('_');
-};
+initSidebarHandlers();
 
 /**
- * Load all registered users and groups
+ * Load Users & Groups
  */
 export const loadUsers = (currentUid) => {
     const qUsers = query(collection(db, "users"));
-    
     onSnapshot(qUsers, (snapshot) => {
-        allUsers = snapshot.docs
-            .map(doc => doc.data())
-            .filter(user => user.uid !== currentUid);
-        allUsersMap = new Map(allUsers.map(u => [u.uid, u]));
-        
+        const usersData = snapshot.docs.map(doc => doc.data());
+        allUsersMap = new Map(usersData.map(u => [u.uid, u]));
+        allUsers = usersData.filter(user => user.uid !== currentUid);
         renderUserList();
     });
 
@@ -115,705 +75,384 @@ export const loadUsers = (currentUid) => {
 };
 
 const renderUserList = (filteredUsers = null, filteredGroups = null) => {
-    userList.innerHTML = '';
+    const userList = getEl('user-list');
+    if (!userList) return;
     
+    userList.innerHTML = '';
     const usersToRender = filteredUsers || allUsers;
     const groupsToRender = filteredGroups || allGroups;
 
     if(usersToRender.length === 0 && groupsToRender.length === 0) {
-        userList.innerHTML = '<li style="padding: 15px; color: #666; font-size: 0.9em;">No users or groups found.</li>';
+        userList.innerHTML = '<li style="padding: 15px; color: #666; font-size: 0.9em;">No users found.</li>';
         return;
     }
 
-    // Render Groups
     groupsToRender.forEach(group => {
         const li = document.createElement('li');
         li.className = `user-row ${activeChatUserId === group.id && activeChatIsGroup ? 'active' : ''}`;
-
-        const name = group.name;
-        const photoURL = `https://ui-avatars.com/api/?name=${name}&background=random`;
-
         li.innerHTML = `
-            <div class="photo-circle-small" style="background-image: url(${photoURL});"></div>
-            <span class="user-name-text">${name} (Group)</span>
+            <div class="photo-circle-small" style="background-image: url(https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=random);"></div>
+            <span class="user-name-text">${group.name} (Group)</span>
         `;
-
-        li.addEventListener('click', () => selectGroupChat(group));
+        li.onclick = () => selectGroupChat(group);
         userList.appendChild(li);
     });
 
-    // Render Users
     usersToRender.forEach(user => {
         const li = document.createElement('li');
         li.className = `user-row ${activeChatUserId === user.uid && !activeChatIsGroup ? 'active' : ''}`;
-        
         const name = user.username || user.email.split('@')[0];
-        const photoURL = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
-        
-        const photoDiv = document.createElement('div');
-        photoDiv.className = 'photo-circle-small';
-        photoDiv.style.backgroundImage = `url(${photoURL})`;
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'user-name-text';
-        nameSpan.textContent = name;
-
-        li.appendChild(photoDiv);
-        li.appendChild(nameSpan);
-        
-        li.addEventListener('click', () => selectUserChat(user));
-        fragment.appendChild(li);
+        const photo = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+        li.innerHTML = `
+            <div class="photo-circle-small" style="background-image: url(${photo});"></div>
+            <span class="user-name-text">${name}</span>
+        `;
+        li.onclick = () => selectUserChat(user);
+        userList.appendChild(li);
     });
-
-    userList.appendChild(fragment);
 };
 
 /**
- * User Search Filter
- */
-searchUsers.addEventListener('input', debounce((e) => {
-    const term = e.target.value.toLowerCase();
-    const filtered = allUsers.filter(user => (user.username || user.email).toLowerCase().includes(term));
-    renderUserList(filtered);
-}, 300));
-
-/**
- * Select a user to chat with
+ * Chat Selection
  */
 const selectUserChat = (targetUser) => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
     activeChatUserId = targetUser.uid;
     activeChatIsGroup = false;
-    const currentUser = getCurrentUser();
-    
-    // Update Header
-    activeChatTitle.textContent = `Chatting with ${targetUser.username || targetUser.email.split('@')[0]}`;
+
+    getEl('active-chat-title').textContent = `Chatting with ${targetUser.username || targetUser.email.split('@')[0]}`;
     updateHeaderStatus(targetUser.status || 'Offline');
     
+    const photoEl = getEl('active-chat-photo');
     if (targetUser.photoURL) {
-        activeChatPhoto.style.backgroundImage = `url(${targetUser.photoURL})`;
-        activeChatPhoto.classList.remove('hidden');
+        photoEl.style.backgroundImage = `url(${targetUser.photoURL})`;
+        photoEl.classList.remove('hidden');
     } else {
-        activeChatPhoto.classList.add('hidden');
+        photoEl.classList.add('hidden');
     }
     
-    // Enable input
-    messageInput.disabled = false;
-    sendBtn.disabled = false;
-    messageInput.focus();
+    const input = getEl('message-input');
+    const sendBtn = getEl('send-btn');
+    if (input) { input.disabled = false; input.focus(); }
+    if (sendBtn) sendBtn.disabled = false;
     
     renderUserList();
-
-    if(currentUser) {
-        listenForMessages(getChatId(currentUser.uid, targetUser.uid));
-        listenForTyping(getChatId(currentUser.uid, targetUser.uid), targetUser.uid);
-    }
+    listenForMessages(getChatId(currentUser.uid, targetUser.uid));
+    listenForTyping(getChatId(currentUser.uid, targetUser.uid), targetUser.uid);
 };
 
-/**
- * Select a group to chat with
- */
 const selectGroupChat = (group) => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+
     activeChatUserId = group.id;
     activeChatIsGroup = true;
-    const currentUser = getCurrentUser();
 
-    // Update Header
-    activeChatTitle.textContent = `${group.name}`;
-    updateHeaderStatus(true); // Groups are "always online" conceptually here
+    getEl('active-chat-title').textContent = group.name;
+    updateHeaderStatus(true);
+    
+    const photoEl = getEl('active-chat-photo');
+    photoEl.style.backgroundImage = `url(https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=random)`;
+    photoEl.classList.remove('hidden');
 
-    const photoURL = `https://ui-avatars.com/api/?name=${group.name}&background=random`;
-    activeChatPhoto.style.backgroundImage = `url(${photoURL})`;
-    activeChatPhoto.classList.remove('hidden');
-
-    // Enable input
-    messageInput.disabled = false;
-    sendBtn.disabled = false;
-    messageInput.focus();
+    const input = getEl('message-input');
+    const sendBtn = getEl('send-btn');
+    if (input) { input.disabled = false; input.focus(); }
+    if (sendBtn) sendBtn.disabled = false;
 
     renderUserList();
-    
-    if(currentUser) {
-        listenForMessages(group.id);
-        // Disable typing indicator for groups for simplicity, or implement group typing
-        if (typingObj) {
-            typingObj();
-            typingObj = null;
-        }
-        typingIndicator.classList.add('hidden');
-    }
+    listenForMessages(group.id);
+    if (typingObj) { typingObj(); typingObj = null; }
+    getEl('typing-indicator').classList.add('hidden');
 };
-
 
 /**
- * Typing Indicator Logic
- */
-const listenForTyping = (chatId, targetUid) => {
-    if (activeChatIsGroup) return; // Skip for groups for now
-    if (typingObj) typingObj();
-    
-    typingObj = onSnapshot(doc(db, "typing", chatId), (snapshot) => {
-        if (snapshot.exists()) {
-            const data = snapshot.data();
-            const status = data[targetUid];
-            const targetName = activeChatTitle.textContent.replace('Chatting with ', '');
-            
-            if (status) {
-                typingIndicator.classList.remove('hidden');
-                // Ghost Typing Logic: Show snippet of what they are typing
-                const ghostText = typeof status === 'string' ? status.substring(0, 40) : '';
-
-                const typingSpan = typingIndicator.querySelector('span');
-                typingSpan.textContent = ''; // Clear previous
-
-                const targetNameText = activeChatTitle.textContent.replace('Chatting with ', '');
-
-                if (ghostText) {
-                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is writing: "${ghostText}"`));
-                } else {
-                    typingSpan.appendChild(document.createTextNode(`${targetNameText} is typing`));
-                }
-
-                // Animated dots
-                [0.2, 0.4, 0.6].forEach(delay => {
-                    const dot = document.createElement('span');
-                    dot.textContent = '.';
-                    dot.style.animation = `typing 1.4s infinite ${delay}s`;
-                    typingSpan.appendChild(dot);
-                });
-
-                // Ensure dynamic keyframes exist
-                if (!document.getElementById('typing-keyframes')) {
-                    const style = document.createElement('style');
-                    style.id = 'typing-keyframes';
-                    style.innerHTML = `@keyframes typing { 0%, 100% { opacity: 0.2; } 20% { opacity: 1; } }`;
-                    document.head.appendChild(style);
-                }
-            } else {
-                typingIndicator.classList.add('hidden');
-            }
-        }
-    });
-};
-
-const setTypingStatus = async (status) => {
-    const currentUser = getCurrentUser();
-    if (!currentUser || !activeChatUserId || activeChatIsGroup) return;
-    const chatId = getChatId(currentUser.uid, activeChatUserId);
-    
-    // Ghost Typing: send the actual text if status is true-ish
-    const value = status ? (messageInput.value || true) : false;
-    
-    await setDoc(doc(db, "typing", chatId), {
-        [currentUser.uid]: value
-    }, { merge: true });
-};
-
-messageInput.addEventListener('input', () => {
-    setTypingStatus(true);
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => setTypingStatus(false), 3000);
-});
-
-/**
- * Listen for messages
+ * Message Listening
  */
 const listenForMessages = (chatId) => {
-    if(activeChatObj) activeChatObj();
-    const currentUid = getCurrentUser().uid;
-    
+    if (activeChatObj) activeChatObj();
+    const user = getCurrentUser();
+    if (!user) return;
+
     const messagesRef = collection(db, activeChatIsGroup ? "groups" : "chats", chatId, "messages");
     const q = query(messagesRef, orderBy("timestamp", "asc"));
     
     activeChatObj = onSnapshot(q, (snapshot) => {
-        messagesContainer.innerHTML = '';
+        const container = getEl('messages-container');
+        if (!container) return;
+        container.innerHTML = '';
         
         let lastSenderId = null;
         let lastTimestamp = 0;
-
         const fragment = document.createDocumentFragment();
 
-        snapshot.forEach((doc) => {
-            const msg = doc.data();
-            const msgId = doc.id;
+        snapshot.forEach((docSnap) => {
+            const msg = docSnap.data();
+            const msgId = docSnap.id;
 
-            // Filter out "Delete for me" messages
-            if (msg.hiddenFrom && msg.hiddenFrom.includes(currentUid)) return;
+            if (msg.hiddenFrom && msg.hiddenFrom.includes(user.uid)) return;
 
-            // Grouping logic (same sender within 5 mins)
             const isGrouped = lastSenderId === msg.senderId && (msg.timestamp ? (msg.timestamp.toMillis() - lastTimestamp < 300000) : true);
             
-            // Mark unread messages as read if they aren't from the current user
-            if (!activeChatIsGroup && msg.senderId !== currentUid && !msg.read) {
-                const msgRef = doc(db, "chats", chatId, "messages", msgId);
-                updateDoc(msgRef, { read: true }).catch(console.error);
+            if (!activeChatIsGroup && msg.senderId !== user.uid && !msg.read) {
+                updateDoc(doc(db, "chats", chatId, "messages", msgId), { read: true }).catch(() => {});
             }
 
-            renderMessage(msg, msgId, currentUid, isGrouped);
-            
+            renderMessage(msg, msgId, user.uid, isGrouped, fragment);
             lastSenderId = msg.senderId;
             lastTimestamp = msg.timestamp ? msg.timestamp.toMillis() : Date.now();
         });
         
-        messagesContainer.appendChild(fragment);
+        container.appendChild(fragment);
         scrollToBottom();
     });
 };
 
-const renderMessage = (msg, msgId, currentUid, isGrouped, container = messagesContainer) => {
+/**
+ * Message Rendering
+ */
+const renderMessage = (msg, msgId, currentUid, isGrouped, container) => {
     const isSent = msg.senderId === currentUid;
-    
-    // Identify sender for group chats
-    let senderName = '';
-    if (activeChatIsGroup && !isSent) {
-        const senderInfo = allUsersMap.get(msg.senderId);
-        senderName = senderInfo ? (senderInfo.username || senderInfo.email.split('@')[0]) : 'Unknown';
-    }
-
-    // Signature Fog Lookup
-    let accentClass = '';
     const sender = allUsersMap.get(msg.senderId) || (isSent ? getCurrentUser() : null);
-    if (sender && sender.accentColor) {
-        return `accent-${sender.accentColor}`;
-    }
-    return '';
-};
-
-const createReplyPreview = (msg) => {
-    const replyPreview = document.createElement('div');
-    replyPreview.className = 'reply-preview';
-    replyPreview.textContent = msg.replyToText;
-
-    // Scroll to replied message on click
-    replyPreview.style.cursor = 'pointer';
-    replyPreview.onclick = () => {
-        const targetMsg = document.querySelector(`.message[data-id="${msg.replyToId}"]`);
-        if (targetMsg) {
-            targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            targetMsg.style.transition = 'transform 0.3s, box-shadow 0.3s';
-            targetMsg.style.transform = 'scale(1.05)';
-            targetMsg.style.boxShadow = '0 0 15px var(--border-box)';
-            setTimeout(() => {
-                targetMsg.style.transform = '';
-                targetMsg.style.boxShadow = '3.5px 3.5px 0px var(--border-box)';
-            }, 1000);
-        }
-    };
-    return replyPreview;
-};
-
-const createMessageContent = (msg) => {
-    if (msg.type === 'image') {
-        const img = document.createElement('img');
-        img.src = msg.url;
-        img.className = 'message-image';
-        img.onclick = () => window.open(msg.url, '_blank');
-        return img;
-    } else {
-        const textContent = document.createElement('div');
-        textContent.textContent = msg.text;
-
-        if (msg.edited) {
-            const editedSpan = document.createElement('span');
-            editedSpan.style.fontSize = '0.7em';
-            editedSpan.style.opacity = '0.6';
-            editedSpan.style.marginLeft = '8px';
-            editedSpan.style.fontStyle = 'italic';
-            editedSpan.textContent = '(edited)';
-            textContent.appendChild(editedSpan);
-        }
-        return textContent;
-    }
-};
-
-const createReactionsContainer = (msg, msgId) => {
-    const reactionsDiv = document.createElement('div');
-    reactionsDiv.className = 'reactions-container';
-    Object.entries(msg.reactions).forEach(([emoji, count]) => {
-        if (count > 0) {
-            const span = document.createElement('span');
-            span.className = 'reaction-pill';
-            span.textContent = `${emoji} ${count}`;
-            span.onclick = (e) => {
-                e.stopPropagation();
-                addReaction(msgId, emoji, -1); // Simple toggle off
-            };
-            reactionsDiv.appendChild(span);
-        }
-    });
-    return reactionsDiv;
-};
-
-const createTimeSpan = (msg, isSent) => {
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'message-time';
-    timeSpan.style.display = 'flex';
-    timeSpan.style.alignItems = 'center';
-    timeSpan.style.justifyContent = 'flex-end';
-    timeSpan.style.gap = '4px';
-    
-    if (msg.timestamp) {
-        const date = msg.timestamp.toDate();
-        timeSpan.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        if (isSent) {
-            // Read receipt indicator (Simulated Delivered)
-            const receipt = document.createElement('span');
-            receipt.innerHTML = '&#10003;&#10003;'; // double checkmark
-            receipt.style.fontSize = '0.7rem';
-            receipt.style.color = '#fff';
-            receipt.style.opacity = '0.8';
-            timeSpan.appendChild(receipt);
-        }
-    } else {
-        timeSpan.textContent = "Sending...";
-        if (isSent) {
-            const receipt = document.createElement('span');
-            receipt.innerHTML = '&#10003;'; // single checkmark
-            receipt.style.fontSize = '0.7rem';
-            receipt.style.color = '#fff';
-            receipt.style.opacity = '0.5';
-            timeSpan.appendChild(receipt);
-        }
-    }
-    
-    return timeSpan;
-};
-
-const renderMessage = (msg, msgId, currentUid, isGrouped) => {
-    const isSent = msg.senderId === currentUid;
-
-    const accentClass = getSenderAccentClass(msg, isSent);
+    const accentClass = (sender && sender.accentColor) ? `accent-${sender.accentColor}` : '';
 
     const div = document.createElement('div');
     div.className = `message ${isSent ? 'sent' : 'received'} ${isGrouped ? 'grouped' : ''} ${accentClass}`;
     div.dataset.id = msgId;
 
-    // Right-click listener for context menu
     div.oncontextmenu = (e) => {
         e.preventDefault();
-        showContextMenu(e.clientX, e.clientY, msgId, isSent);
+        showContextMenu(e.clientX, e.clientY, msgId, isSent, msg.text);
     };
 
     if (msg.replyToId && msg.replyToText) {
-        div.appendChild(createReplyPreview(msg));
+        const reply = document.createElement('div');
+        reply.className = 'reply-preview';
+        reply.textContent = msg.replyToText;
+        div.appendChild(reply);
     }
 
-    div.appendChild(createMessageContent(msg));
-
-    if (msg.reactions) {
-        div.appendChild(createReactionsContainer(msg, msgId));
+    const content = document.createElement('div');
+    content.textContent = msg.text;
+    if (msg.edited) {
+        const span = document.createElement('span');
+        span.className = 'edited-tag';
+        span.textContent = ' (edited)';
+        content.appendChild(span);
     }
+    div.appendChild(content);
 
-    div.appendChild(createTimeSpan(msg, isSent));
-
-    // Double click to reply
-    div.addEventListener('dblclick', () => {
-        handleReply(msgId, msg.text);
-    });
+    const time = document.createElement('span');
+    time.className = 'message-time';
+    if (msg.timestamp) {
+        time.textContent = msg.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+        time.textContent = 'Sending...';
+    }
+    div.appendChild(time);
 
     container.appendChild(div);
 };
 
 /**
- * UI: Smart Menu Positioning
+ * Context Menu
  */
-const smartPosition = (element, x, y) => {
-    element.classList.remove('hidden'); // Show first to get dimensions
-    const padding = 10;
-    const { offsetWidth: menuWidth, offsetHeight: menuHeight } = element;
-    const { innerWidth: windowWidth, innerHeight: windowHeight } = window;
-
-    let finalX = x;
-    let finalY = y;
-
-    if (x + menuWidth > windowWidth - padding) finalX = windowWidth - menuWidth - padding;
-    if (y + menuHeight > windowHeight - padding) finalY = windowHeight - menuHeight - padding;
-    if (finalX < padding) finalX = padding;
-    if (finalY < padding) finalY = padding;
-
-    element.style.left = `${finalX}px`;
-    element.style.top = `${finalY}px`;
-};
-
-/**
- * Update Header Status (2D Flat)
- */
-const updateHeaderStatus = (isOnline) => {
-    activeChatStatus.textContent = '';
-    const statusDot = document.createElement('span');
-    statusDot.className = `status-dot ${isOnline ? 'online' : 'offline'}`;
-    activeChatStatus.appendChild(statusDot);
-    activeChatStatus.appendChild(document.createTextNode(isOnline ? ' Online' : ' Offline'));
-};
-
-/**
- * Context Menu Logic
- */
-const showContextMenu = (x, y, msgId, isSent) => {
+const showContextMenu = (x, y, msgId, isSent, text) => {
+    const menu = getEl('context-menu');
+    if (!menu) return;
     contextMessageId = msgId;
+    contextMessageText = text;
 
-    // Find the message text for replying
-    const msgElement = document.querySelector(`.message[data-id="${msgId}"]`);
-    contextMessageText = msgElement ? msgElement.querySelector('div:not(.reply-preview):not(.reactions-container)').textContent : 'Message';
-
-    contextMenu.classList.remove('hidden');
-
-    // Use smart positioning
-    smartPosition(contextMenu, x, y);
+    menu.classList.remove('hidden');
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
     
-    deleteEveryoneBtn.classList.toggle('hidden', !isSent);
-    editMsgBtn.classList.toggle('hidden', !isSent);
-    reactionsOverlay.classList.add('hidden');
-};
-
-const handleReply = (msgId, text) => {
-    replyingToId = msgId;
-    replyingToText = text;
-
-    // Show UI indicator above input
-    let previewBox = document.getElementById('reply-preview-box');
-    if (!previewBox) {
-        previewBox = document.createElement('div');
-        previewBox.id = 'reply-preview-box';
-        previewBox.style.padding = '8px 15px';
-        previewBox.style.backgroundColor = 'var(--bg-card)';
-        previewBox.style.borderTop = '2px solid var(--border-sidebar)';
-        previewBox.style.borderLeft = '2px solid var(--border-sidebar)';
-        previewBox.style.borderRight = '2px solid var(--border-sidebar)';
-        previewBox.style.borderTopLeftRadius = '16px';
-        previewBox.style.borderTopRightRadius = '16px';
-        previewBox.style.fontSize = '0.85rem';
-        previewBox.style.display = 'flex';
-        previewBox.style.justifyContent = 'space-between';
-        previewBox.style.alignItems = 'center';
-
-        const textSpan = document.createElement('span');
-        textSpan.id = 'reply-preview-text';
-        textSpan.style.opacity = '0.8';
-        textSpan.style.whiteSpace = 'nowrap';
-        textSpan.style.overflow = 'hidden';
-        textSpan.style.textOverflow = 'ellipsis';
-        textSpan.style.marginRight = '10px';
-        previewBox.appendChild(textSpan);
-
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = '×';
-        closeBtn.style.background = 'none';
-        closeBtn.style.border = 'none';
-        closeBtn.style.fontSize = '1.2rem';
-        closeBtn.style.cursor = 'pointer';
-        closeBtn.style.color = 'var(--text-primary)';
-        closeBtn.onclick = () => {
-            replyingToId = null;
-            replyingToText = null;
-            previewBox.remove();
-        };
-        previewBox.appendChild(closeBtn);
-
-        // Insert right above message input area
-        const inputArea = document.querySelector('.message-input-area');
-        inputArea.parentNode.insertBefore(previewBox, inputArea);
-    }
-
-    document.getElementById('reply-preview-text').textContent = `Replying to: ${text}`;
-    messageInput.focus();
-};
-
-replyBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    contextMenu.classList.add('hidden');
-    handleReply(contextMessageId, contextMessageText);
-});
-
-document.addEventListener('click', () => {
-    contextMenu.classList.add('hidden');
-    reactionsOverlay.classList.add('hidden');
-});
-
-reactOptionBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    reactionsOverlay.classList.remove('hidden');
-    reactionsOverlay.style.left = contextMenu.style.left;
-    reactionsOverlay.style.top = contextMenu.style.top;
-    contextMenu.classList.add('hidden');
-});
-
-const addReaction = async (msgId, emoji, delta = 1) => {
-    const currentUser = getCurrentUser();
-    if (!currentUser || !activeChatUserId) return;
-    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
-    const collectionName = activeChatIsGroup ? "groups" : "chats";
-    const msgRef = doc(db, collectionName, chatId, "messages", msgId);
-    
-    // In a real app, you'd track WHICH user reacted.
-    // For this MVP, we'll increment/decrement a counter.
-    // Optimizing using increment() to avoid extra getDoc() roundtrip.
-    await updateDoc(msgRef, {
-        [`reactions.${emoji}`]: increment(delta)
-    });
-};
-
-document.querySelectorAll('.reaction-option').forEach(btn => {
-    btn.onclick = () => addReaction(contextMessageId, btn.textContent);
-});
-
-deleteMeBtn.onclick = async () => {
-    const currentUser = getCurrentUser();
-    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
-    const collectionName = activeChatIsGroup ? "groups" : "chats";
-    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
-    await updateDoc(msgRef, {
-        hiddenFrom: arrayUnion(currentUser.uid)
-    });
-};
-
-deleteEveryoneBtn.onclick = async () => {
-    const currentUser = getCurrentUser();
-    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
-    const collectionName = activeChatIsGroup ? "groups" : "chats";
-    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
-    await deleteDoc(msgRef);
-};
-
-editMsgBtn.onclick = async () => {
-    const currentUser = getCurrentUser();
-    const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUser.uid, activeChatUserId);
-    const collectionName = activeChatIsGroup ? "groups" : "chats";
-    const msgRef = doc(db, collectionName, chatId, "messages", contextMessageId);
-
-    const msgDoc = await getDoc(msgRef);
-    if (msgDoc.exists()) {
-        const msgData = msgDoc.data();
-        if (msgData.type === 'text') {
-            messageInput.value = msgData.text;
-            editingMessageId = contextMessageId;
-            sendBtn.textContent = 'Save';
-            messageInput.focus();
-        }
-    }
-    contextMenu.classList.add('hidden');
+    getEl('delete-for-everyone-btn').classList.toggle('hidden', !isSent);
+    getEl('edit-msg-btn').classList.toggle('hidden', !isSent);
 };
 
 /**
- * Create Group Modal Logic
+ * Typing Status
  */
-createGroupBtn.addEventListener('click', () => {
-    createGroupModal.classList.remove('hidden-view');
-    createGroupModal.classList.add('active-view');
-    groupNameInput.value = '';
-    selectedUsersForGroup.clear();
-
-    // Populate users list for selection
-    groupUserSelectList.innerHTML = '';
-    allUsers.forEach(user => {
-        const li = document.createElement('li');
-        li.style.display = 'flex';
-        li.style.alignItems = 'center';
-        li.style.gap = '10px';
-        li.style.padding = '5px 0';
-        li.style.cursor = 'pointer';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.value = user.uid;
-
-        const name = user.username || user.email.split('@')[0];
-        const span = document.createElement('span');
-        span.textContent = name;
-        span.style.color = 'var(--text-primary)';
-
-        li.appendChild(checkbox);
-        li.appendChild(span);
-
-        li.addEventListener('click', (e) => {
-            if (e.target !== checkbox) {
-                checkbox.checked = !checkbox.checked;
-            }
-            if (checkbox.checked) {
-                selectedUsersForGroup.add(user.uid);
-            } else {
-                selectedUsersForGroup.delete(user.uid);
-            }
-        });
-
-        groupUserSelectList.appendChild(li);
-    });
-});
-
-cancelCreateGroupBtn.addEventListener('click', () => {
-    createGroupModal.classList.remove('active-view');
-    createGroupModal.classList.add('hidden-view');
-});
-
-confirmCreateGroupBtn.addEventListener('click', async () => {
-    const groupName = groupNameInput.value.trim();
-    if (!groupName) {
-        alert('Please enter a group name.');
-        return;
-    }
-    if (selectedUsersForGroup.size === 0) {
-        alert('Please select at least one user to add to the group.');
-        return;
-    }
-
-    const currentUser = getCurrentUser();
-    if (!currentUser) return;
-
-    const members = Array.from(selectedUsersForGroup);
-    members.push(currentUser.uid); // Add creator
-
-    try {
-        await addDoc(collection(db, "groups"), {
-            name: groupName,
-            members: members,
-            createdBy: currentUser.uid,
-            createdAt: serverTimestamp()
-        });
-        createGroupModal.classList.remove('active-view');
-        createGroupModal.classList.add('hidden-view');
-    } catch (err) {
-        console.error("Error creating group:", err);
-        alert('Failed to create group.');
-    }
-});
+const setTypingStatus = async (isTyping) => {
+    const user = getCurrentUser();
+    if (!user || !activeChatUserId || activeChatIsGroup) return;
+    const chatId = getChatId(user.uid, activeChatUserId);
+    
+    await setDoc(doc(db, "typing", chatId), {
+        [user.uid]: isTyping
+    }, { merge: true });
+};
 
 /**
- * Setup Chat System
+ * System Setup
  */
 export const setupChatSystem = (currentUid) => {
+    const messageForm = getEl('message-form');
+    const messageInput = getEl('message-input');
+    if (!messageForm || !messageInput) return;
+
     messageForm.onsubmit = async (e) => {
         e.preventDefault();
-        const text = messageInput.value.trim();
-        if(!text || !activeChatUserId) return;
-        
-        const chatId = activeChatIsGroup ? activeChatUserId : getChatId(currentUid, activeChatUserId);
-        const collectionName = activeChatIsGroup ? "groups" : "chats";
-
-        messageInput.value = '';
-        setTypingStatus(false);
-        
         try {
+            const text = messageInput.value.trim();
+            if (!text || !activeChatUserId) return;
+
+            const user = getCurrentUser();
+            if (!user) return;
+
+            const chatId = activeChatIsGroup ? activeChatUserId : getChatId(user.uid, activeChatUserId);
+            const collectionName = activeChatIsGroup ? "groups" : "chats";
+
             const msgData = {
+                senderId: user.uid,
                 text: text,
-                senderId: currentUid,
                 timestamp: serverTimestamp(),
-                hiddenFrom: []
+                type: 'text'
             };
 
             if (replyingToId) {
                 msgData.replyToId = replyingToId;
                 msgData.replyToText = replyingToText;
-
-                replyingToId = null;
-                replyingToText = null;
-                const existingPreview = document.getElementById('reply-preview-box');
-                if (existingPreview) existingPreview.remove();
             }
 
-            await addDoc(collection(db, "chats", chatId, "messages"), msgData);
-        } catch (error) {
-            console.error("Error sending/editing message: ", error);
+            messageInput.value = '';
+            const isEditing = editingMessageId;
+            const editId = editingMessageId;
+            editingMessageId = null;
+            getEl('send-btn').textContent = 'Send';
+            
+            setTypingStatus(false);
+
+            if (isEditing) {
+                await updateDoc(doc(db, collectionName, chatId, "messages", editId), {
+                    text: text,
+                    edited: true
+                });
+            } else {
+                await addDoc(collection(db, collectionName, chatId, "messages"), msgData);
+            }
+
+            replyingToId = null;
+            const preview = getEl('reply-preview-box');
+            if (preview) preview.remove();
+
+        } catch (err) {
+            console.error("Chat Submit Error:", err);
         }
     };
+
+    messageInput.oninput = () => {
+        setTypingStatus(true);
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => setTypingStatus(false), 3000);
+    };
+
+    // User Search
+    const searchInput = getEl('search-users');
+    if (searchInput) {
+        searchInput.oninput = (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = allUsers.filter(u => (u.username || u.email).toLowerCase().includes(term));
+            renderUserList(filtered);
+        };
+    }
+
+    // Context Menu Handlers
+    getEl('edit-msg-btn').onclick = () => {
+        messageInput.value = contextMessageText;
+        editingMessageId = contextMessageId;
+        getEl('send-btn').textContent = 'Save';
+        getEl('context-menu').classList.add('hidden');
+        messageInput.focus();
+    };
+
+    getEl('delete-for-me-btn').onclick = async () => {
+        const user = getCurrentUser();
+        const chatId = activeChatIsGroup ? activeChatUserId : getChatId(user.uid, activeChatUserId);
+        await updateDoc(doc(db, activeChatIsGroup ? "groups" : "chats", chatId, "messages", contextMessageId), {
+            hiddenFrom: arrayUnion(user.uid)
+        });
+        getEl('context-menu').classList.add('hidden');
+    };
+
+    getEl('delete-for-everyone-btn').onclick = async () => {
+        const user = getCurrentUser();
+        const chatId = activeChatIsGroup ? activeChatUserId : getChatId(user.uid, activeChatUserId);
+        await deleteDoc(doc(db, activeChatIsGroup ? "groups" : "chats", chatId, "messages", contextMessageId));
+        getEl('context-menu').classList.add('hidden');
+    };
+
+    // Group Logic
+    const createGroupBtn = getEl('create-group-btn');
+    const confirmBtn = getEl('confirm-create-group-btn');
+    const cancelBtn = getEl('cancel-create-group-btn');
+    const modal = getEl('create-group-modal');
+
+    if (createGroupBtn) {
+        createGroupBtn.onclick = () => {
+            modal.classList.remove('hidden-view');
+            modal.classList.add('active-view');
+            const list = getEl('group-user-select-list');
+            list.innerHTML = '';
+            selectedUsersForGroup.clear();
+            allUsers.forEach(u => {
+                const li = document.createElement('li');
+                const name = u.username || u.email.split('@')[0];
+                li.innerHTML = `<input type="checkbox"> <span>${name}</span>`;
+                li.onclick = () => {
+                    const cb = li.querySelector('input');
+                    cb.checked = !cb.checked;
+                    if (cb.checked) selectedUsersForGroup.add(u.uid); else selectedUsersForGroup.delete(u.uid);
+                };
+                list.appendChild(li);
+            });
+        };
+    }
+
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            modal.classList.remove('active-view');
+            modal.classList.add('hidden-view');
+        };
+    }
+
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const name = getEl('group-name-input').value.trim();
+            if (!name || selectedUsersForGroup.size === 0) return alert('Name and members required');
+            const user = getCurrentUser();
+            const members = Array.from(selectedUsersForGroup);
+            members.push(user.uid);
+            await addDoc(collection(db, "groups"), { name, members, createdBy: user.uid, createdAt: serverTimestamp() });
+            modal.classList.remove('active-view');
+            modal.classList.add('hidden-view');
+        };
+    }
 };
 
+/**
+ * Utils
+ */
+const getChatId = (u1, u2) => [u1, u2].sort().join('_');
+
+const updateHeaderStatus = (status) => {
+    const el = getEl('active-chat-status');
+    if (!el) return;
+    const isOnline = status === true || status === 'Online';
+    el.innerHTML = `<span class="status-dot ${isOnline ? 'online' : 'offline'}"></span> ${isOnline ? 'Online' : 'Offline'}`;
+};
+
+const listenForTyping = (chatId, targetUid) => {
+    if (typingObj) typingObj();
+    typingObj = onSnapshot(doc(db, "typing", chatId), (snap) => {
+        const indicator = getEl('typing-indicator');
+        if (snap.exists() && snap.data()[targetUid]) {
+            indicator.classList.remove('hidden');
+        } else {
+            indicator.classList.add('hidden');
+        }
+    });
+};
