@@ -628,6 +628,45 @@ export const setupChatSystem = (currentUid) => {
             else el.style.border = '';
         });
     };
+
+    // Settings Drawer Controls
+    getEl('close-settings-btn').onclick = () => getEl('settings-drawer').classList.remove('active');
+
+    getEl('setting-text-size')?.addEventListener('input', (e) => {
+        const size = e.target.value;
+        document.documentElement.style.setProperty('--font-size-base', `${size}px`);
+        localStorage.setItem('armchat_text_size', size);
+    });
+
+    getEl('setting-bubble-radius')?.addEventListener('input', (e) => {
+        const radius = e.target.value;
+        document.documentElement.style.setProperty('--bubble-radius', `${radius}px`);
+        localStorage.setItem('armchat_bubble_radius', radius);
+    });
+
+    getEl('setting-read-receipts')?.addEventListener('change', (e) => {
+        localStorage.setItem('armchat_read_receipts', e.target.checked);
+    });
+
+    getEl('setting-notif-sound')?.addEventListener('change', (e) => {
+        localStorage.setItem('armchat_notif_sound', e.target.checked);
+    });
+
+    getEl('clear-cache-btn')?.addEventListener('click', () => {
+        if (confirm('Clear all local cache? This will reset your theme and recent emojis.')) {
+            localStorage.clear();
+            window.location.reload();
+        }
+    });
+
+    // Load saved settings
+    const savedSize = localStorage.getItem('armchat_text_size') || '16';
+    document.documentElement.style.setProperty('--font-size-base', `${savedSize}px`);
+    if(getEl('setting-text-size')) getEl('setting-text-size').value = savedSize;
+
+    const savedRadius = localStorage.getItem('armchat_bubble_radius') || '15';
+    document.documentElement.style.setProperty('--bubble-radius', `${savedRadius}px`);
+    if(getEl('setting-bubble-radius')) getEl('setting-bubble-radius').value = savedRadius;
 };
 
 /**

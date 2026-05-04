@@ -21,6 +21,8 @@
     --border-radius-lg: 28px;
     --border-radius-md: 20px;
     --border-radius-sm: 12px;
+    --font-size-base: 16px;
+    --bubble-radius: 15px;
 }
 
 .dark-mode {
@@ -97,6 +99,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; transition: background-color 0.3s ease, border-color 0.3s ease; }
 body {
     font-family: 'Space Grotesk', sans-serif;
+    font-size: var(--font-size-base);
     background-color: var(--bg-app);
     color: var(--text-primary);
     overflow: hidden; 
@@ -473,12 +476,12 @@ body::before {
 .message.sent { 
     align-self: flex-end; 
     background: var(--accent-amber); 
-    border-radius: 22px 22px 4px 22px; 
+    border-radius: var(--bubble-radius); 
 }
 .message.received { 
     align-self: flex-start; 
     background: var(--bg-card); 
-    border-radius: 22px 22px 22px 4px; 
+    border-radius: var(--bubble-radius); 
 }
 .message.grouped { margin-top: -6px; }
 
@@ -773,6 +776,86 @@ body::before {
 
 .user-row.active .user-status-text {
     color: rgba(255, 255, 255, 0.8);
+}
+
+/* Settings Components */
+.setting-item {
+    margin-bottom: 20px;
+}
+
+.setting-item label {
+    display: block;
+    font-weight: 800;
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.brutal-range {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 10px;
+    background: var(--bg-card);
+    border: 2.5px solid var(--border-box);
+    border-radius: 5px;
+    outline: none;
+}
+
+.brutal-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--accent-color);
+    border: 2.5px solid var(--border-box);
+    cursor: pointer;
+    box-shadow: 2px 2px 0px var(--border-box);
+    transition: all 0.1s var(--ease-brutal);
+}
+
+.brutal-range::-webkit-slider-thumb:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0px 0px 0px var(--border-box);
+}
+
+.brutal-checkbox {
+    width: 24px;
+    height: 24px;
+    -webkit-appearance: none;
+    background: var(--bg-card);
+    border: 2.5px solid var(--border-box);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s var(--ease-brutal);
+    box-shadow: 3px 3px 0px var(--border-box);
+}
+
+.brutal-checkbox:checked {
+    background: var(--accent-color);
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0px var(--border-box);
+}
+
+.brutal-checkbox:checked::after {
+    content: '✕';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--primary-color);
+    font-weight: 900;
+    font-size: 0.8rem;
+}
+
+.brutal-checkbox:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0px 0px 0px var(--border-box);
 }
 
 /* Notification Banner */
