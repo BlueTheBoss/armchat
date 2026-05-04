@@ -10,54 +10,87 @@ const getEl = (id) => document.getElementById(id);
 /**
  * Global App Logic
  */
+let isInitialized = false;
+
 export const initApp = () => {
+    if (isInitialized) return;
+    isInitialized = true;
+    
     initTheme();
     
     // --- Global Event Delegation ---
     document.addEventListener('click', (e) => {
-        const profileMenu = getEl('profile-menu');
-        if (!profileMenu) return;
+        const settingsDrawer = getEl('settings-drawer');
+        const emojiPicker = getEl('emoji-picker');
+        const contextMenu = getEl('context-menu');
+        const reactionsOverlay = getEl('reactions-overlay');
 
-        const isThemeBtn = e.target.closest('.theme-toggle-btn');
-        const isSwatch = e.target.closest('.swatch');
-        const isLogoBtn = e.target.closest('#logo-button');
-        const isProfileMenu = e.target.closest('#profile-menu');
-        const isStatusSelect = e.target.id === 'user-status-select';
-        
-        // 1. Handle Theme Toggle
-        if (isThemeBtn) {
-            e.preventDefault();
-            toggleTheme();
-            profileMenu.classList.add('hidden');
+        const isSettingsBtn = e.target.closest('#settings-btn');
+        const isCloseSettings = e.target.closest('#close-settings-btn');
+        const isEmojiBtn = e.target.closest('#emoji-btn');
+        const isSearchToggle = e.target.closest('#search-toggle');
+        const isCloseSearch = e.target.closest('#close-search-btn');
+
+        // Settings Drawer
+        if (isSettingsBtn && settingsDrawer) {
+            settingsDrawer.classList.add('open');
+            return;
+        }
+        if (settingsDrawer && (isCloseSettings || (settingsDrawer.classList.contains('open') && !e.target.closest('#settings-drawer') && !isSettingsBtn))) {
+            settingsDrawer.classList.remove('open');
+        }
+
+        // Emoji Picker
+        if (isEmojiBtn && emojiPicker) {
+            const isOpening = emojiPicker.classList.contains('hidden');
+            emojiPicker.classList.toggle('hidden');
+            if (isOpening) window.dispatchEvent(new CustomEvent('emoji-picker-open'));
+            return;
+        }
+        if (emojiPicker && !e.target.closest('#emoji-picker') && !isEmojiBtn) {
+            emojiPicker.classList.add('hidden');
+        }
+
+        // Search Overlay
+        const searchOverlay = getEl('search-overlay');
+        if (isSearchToggle && searchOverlay) {
+            searchOverlay.classList.add('active');
+            getEl('msg-search-input')?.focus();
+            return;
+        }
+        if (isCloseSearch && searchOverlay) {
+            searchOverlay.classList.remove('active');
             return;
         }
 
-        // 2. Handle Accent Swatches
-        if (isSwatch) {
-            const color = isSwatch.dataset.color;
+        // Context Menu & Reactions
+        if (contextMenu && !e.target.closest('#context-menu') && !e.target.closest('.message')) {
+            contextMenu.classList.add('hidden');
+        }
+        if (reactionsOverlay && !e.target.closest('#reactions-overlay') && !e.target.closest('#react-btn')) {
+            reactionsOverlay.classList.add('hidden');
+        }
+
+        // Theme switching
+        const themeOption = e.target.closest('.theme-option');
+        if (themeOption) {
+            const theme = themeOption.dataset.theme;
+            setTheme(theme);
+        }
+
+        // Accent swatches
+        const swatch = e.target.closest('.swatch');
+        if (swatch) {
+            const color = swatch.dataset.color;
             if (currentUser) {
                 updateDoc(doc(db, "users", currentUser.uid), { accentColor: color })
-                    .then(() => alert(`Signature Fog: ${color} set!`))
+                    .then(() => alert(`Accent set to ${color}!`))
                     .catch(err => console.error(err));
             }
-            profileMenu.classList.add('hidden');
-            return;
-        }
-
-        // 3. Handle Status Select
-        if (isStatusSelect) return;
-
-        // 4. Handle Logo / Menu Toggle
-        if (isLogoBtn && !isProfileMenu) {
-            profileMenu.classList.toggle('hidden');
-            return;
-        }
-        
-        // 5. Close profile menu when clicking outside
-        if (!profileMenu.classList.contains('hidden') && !isLogoBtn) {
-            profileMenu.classList.add('hidden');
         }
     });
+
+    initEmojiPicker();
 
     // Change Photo Logic
     const changePhotoBtn = getEl('change-photo-btn');
@@ -99,20 +132,120 @@ export const getCurrentUser = () => currentUser;
  */
 export const initTheme = () => {
     const savedTheme = localStorage.getItem('theme') || 'light';
-    if (savedTheme === 'dark') document.documentElement.classList.add('dark-mode');
-    updateThemeButtonsText(savedTheme);
+    setTheme(savedTheme);
 };
 
-export const toggleTheme = () => {
-    const isDark = document.documentElement.classList.toggle('dark-mode');
-    const newTheme = isDark ? 'dark' : 'light';
-    localStorage.setItem('theme', newTheme);
-    updateThemeButtonsText(newTheme);
+export const setTheme = (theme) => {
+    // Remove all possible themes
+    const themes = ['dark-mode', 'theme-midnight', 'theme-sakura', 'theme-forest', 'theme-ocean', 'theme-sunset', 'theme-arctic'];
+    document.documentElement.classList.remove(...themes);
+    
+    if (theme === 'dark') {
+        document.documentElement.classList.add('dark-mode');
+    } else if (theme !== 'light') {
+        document.documentElement.classList.add(`theme-${theme}`);
+    }
+    
+    localStorage.setItem('theme', theme);
+    
+    // Update active state in grid
+    document.querySelectorAll('.theme-option').forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.theme === theme);
+    });
 };
 
-const updateThemeButtonsText = (theme) => {
-    const text = theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE';
-    document.querySelectorAll('.theme-toggle-btn').forEach(btn => btn.textContent = text);
+const initEmojiPicker = () => {
+    const picker = getEl('emoji-picker');
+    const input = getEl('message-input');
+    if (!picker) return;
+
+    const getRecentEmojis = () => {
+        try {
+            return JSON.parse(localStorage.getItem('recent_emojis')) || [];
+        } catch (e) { return []; }
+    };
+
+    const saveRecentEmoji = (emoji) => {
+        let recent = getRecentEmojis();
+        recent = [emoji, ...recent.filter(e => e !== emoji)].slice(0, 21);
+        localStorage.setItem('recent_emojis', JSON.stringify(recent));
+    };
+
+    const emojiData = [
+        { category: "Recent", emojis: getRecentEmojis() },
+        { category: "Smileys", emojis: ['😊', '😂', '🤣', '❤️', '😍', '😒', '😭', '😘', '😩', '😔', '😁', '🤫', '😎', '🙄', '😤', '🥺', '😡', '😱', '😴', '🤤', '🫠', '🙃', '😏', '🥳', '🤓', '🧐', '😕', '😰', '🥶', '🥵', '🤯', '🤠', '🤡', '🤥', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '😈', '👿', '💀', '☠️', '💩', '🤡', '👻', '👽', '👾', '🤖'] },
+        { category: "Body & People", emojis: ['👍', '👎', '👊', '✌️', '👌', '🤝', '👋', '🙏', '👏', '🙌', '💪', '🖕', '🤘', '🤟', '🤞', '🖖', '✋', '🤚', '🤏', '✍️', '🤳', '💅', '👂', '👃', '🧠', '🫀', '🫁', '🦷', '🦴', '👀', '👁️', '👅', '👄', '👤', '👥', '🫂', '👶', '👧', '🧒', '👦', '👩', '🧑', '👨', '👩‍🦱', '🧑‍🦱', '👨‍🦱'] },
+        { category: "Animals", emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🐤', '🦆', '🦅', '🦉', '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🐛', '🦋', '🐌', '🐞', '🐜', '🦟', '🪳', '🕷️', '🕸️', '🦂', '🐢', '🐍', '🦎', '🦖', '🦕', '🐙', '🦑', '🦐', '🦞', '🦀', '🐡', '🐠', '🐟', '🐬', '🐳', '🐋', '🦈'] },
+        { category: "Food", emojis: ['🍎', '🍓', '🍒', '🍑', '🍋', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬', '🥒', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔', '🥖', '🥨', '🧀', '🥚', '🍳', '🧈', '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🍔', '🍟', '🍕', '🌭', '🥪', '🌮', '🌯', '🫔', '🥗', '🥘', '🍲', '🫕', '🥣', '🍛', '🍜', '🍣', '🍤', '🍥', '🍡', '🥟', '🥠', '🥡', '🍦', '🍧', '🍨', '🍩', '🍪', '🎂', '🍰', '🧁', '🥧', '🍫', '🍬', '🍭', '🍮', '🍯', '🍼', '🥛', '☕', '🍵', '🍶', '🍾', '🍷', '🍸', '🍹', '🍺', '🍻', '🥂', '🥃', '🥤', '🧋', '🧃', '🧉', '🧊'] },
+        { category: "Travel", emojis: ['🚗', '🚕', '🚙', '🚌', '🚎', '🏎️', '🚓', '🚑', '🚒', '🚐', '🛻', '🚚', '🚛', '🚜', '🛵', '🚲', '🛴', '🛹', '🛼', '🚏', '🛣️', '🛤️', '⛽', '🚨', '🚥', '🚦', '🛑', '🚧', '⚓', '⛵', '🛶', '🚤', '🛳️', '⛴️', '🚢', '✈️', '🛩️', '🛫', '🛬', '🪂', '💺', '🚁', '🚟', '🚠', '🚡', '🛰️', '🚀', '🛸', '🎆', '🎇', '🎑', '🏙️', '🏘️', '🏚️', '🏠', '🏡', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏫', '🏬', '🏭', '🏯', '🏰', '💒', '🗼', '🗽', '⛪', '🕌', '🛕', '🕍', '⛩️', '🕋', '⛲', '⛺', '🌁', '🌃', '🌄', '🌅', '🌆', '🌇', '🌉', '♨️', '🎠', '🎡', '🎢', '💈', '🎪'] },
+        { category: "Objects", emojis: ['⌚', '📱', '📲', '💻', '⌨️', '🖱️', '🖲️', '🕹️', '🗜️', '💽', '💾', '💿', '📀', '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📞', '☎️', '📟', '📠', '📺', '📻', '🎙️', '🎚️', '🎛️', '🧭', '⏱️', '⏲️', '⏰', '🕰️', '⌛', '⏳', '📡', '🔋', '🔌', '💡', '🔦', '🕯️', '🪔', '🧯', '🛢️', '💸', '💵', '💴', '💶', '💷', '🪙', '💰', '💳', '💎', '⚖️', '🪜', '🧰', '🪛', '🔧', '🔨', '⚒️', '🛠️', '⛏️', '🪚', '🔩', '⚙️', '🪗', '⛓️', '🪝', '🧲', '🔫', '💣', '🧨', '🪓', '🔪', '🗡️', '⚔️', '🛡️', '🚬', '⚰️', '🪦', '⚱️', '🏺', '🔮', '📿', '🧿', '💈', '⚗️', '🔭', '🔬', '🕳️', '🩹', '🩺', '💊', '💉', '🩸', '🧬', '🦠', '🧫', '🧪', '🌡️', '🧹', '🧺', '🧻', '🚽', '🚰', '🚿', '🛁', '🛀', '🧼', '🪥', '🪒', '🧽', '🪣', '🧴', '🛎️', '🔑', '🗝️', '🚪', '🪑', '🛋️', '🛏️', '🛌', '🧸', '🪆', '🖼️', '🪞', '🪟', '🛍️', '🛒', '🎁', '🎈', '🎏', '🎀', '🪄', '🪅', '🎊', '🎉', '🎎', '🏮', '🎐', '🧧', '✉️', '📩', '📨', '📧', '💌', '📥', '📤', '📦', '🏷️', '🪧', '📪', '📫', '📬', '📭', '📮', '📯', '📜', '📃', '📄', '📑', '🧾', '📊', '📈', '📉', '🗒️', '🗓️', '📆', '📅', '🗑️', '📇', '🗃️', '🗳️', '🗄️', '📋', '📁', '📂', '🗂️', '🗞️', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇️', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊️', '🖋️', '✒️', '🖌️', '🖍️', '📝', '📁', '📂', '🗂️', '🗞️', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇️', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊️', '🖋️', '✒️', '🖌️', '🖍️', '📝', '💼', '📁', '📂', '🗂️', '🗞️', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇️', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊️', '🖋️', '✒️', '🖌️', '🖍️', '📝', '💼', '📁', '📂', '🗂️', '🗞️', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇️', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊️', '🖋️', '✒️', '🖌️', '🖍️', '📝', '💼', '📁', '📂', '🗂️', '🗞️', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇️', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊️', '🖋️', '✒️', '🖌️', '🖍️', '📝', '💼', '📁', '📂', '🗂️', '🗞️', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇️', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊️', '🖋️', '✒️', '🖌️', '🖍️', '📝', '💼'] },
+        { category: "Symbols", emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐', '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '🆔', '⚛️', '🉑', '☢️', '☣️', '📴', '📳', '🈶', '🈚', '🈸', '🈺', '🈷️', '✴️', '🆚', '💮', '🉐', '㊙️', '㊗️', '🈴', '🈵', '🈹', '🈲', '🅰️', '🅱️', '🆎', '🆑', '🅾️', '🆘', '❌', '⭕', '🛑', '⛔', '📛', '🚫', '💯', '💢', '♨️', '🚷', '🚯', '🚳', '🚱', '🔞', '📵', '🚭', '❗', '❕', '❓', '❔', '‼', '⁉', '🔅', '   ', '⚠️', '🚸', '🔱', '⚜️', '🔰', '♻️', '✅', '🈯', '💹', '❇️', '✳️', '❎', '🌐', '💠', 'Ⓜ️', '🌀', '💤', '🏧', '🚾', '♿', '🅿️', '🛗', '🈳', '🈂️', '🛂', '🛃', '🛄', '🛅', '🚹', '🚺', '🚼', '⚧️', '🚻', '🚮', '🎦', '📶', '🈁', '🔣', 'ℹ️', '🔤', '🔡', '🔠', '🆖', '🆗', '🆙', '🆒', '🆕', '🆓', '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '🔢', '#️⃣', '*️⃣', '⏏️', '▶️', '⏸️', '⏯️', '⏹️', '⏺️', '⏭️', '⏮️', '⏩', '⏪', '⏫', '⏬', '◀️', '🔼', '🔽', '➡️', '⬅️', '⬆️', '⬇️', '↗️', '↘️', '↙️', '↖️', '↕️', '↔️', '↪️', '↩️', '⤴️', '⤵️', '🔀', '🔁', '🔂', '🔄', '🔃', '🎵', '🎶', '➕', '➖', '➗', '✖️', '♾️', '💲', '💱', '™️', '©️', '®️', '👁️‍🗨️', '🔚', '🔙', '🔛', '🔝', '🔜', '〰️', '➰', '➿', '✔️', '☑️', '🔘', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⚫', '⚪', '🟤', '🔺', '🔻', '🔸', '🔹', '🔶', '🔷', '🔳', '🔲', '▪️', '▫️', '◾', '◽', '◼️', '◻️', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '⬛', '⬜', '🟫', '🔈', '🔉', '🔊', '🔇', '📣', '📢', '🔔', '🔕', '🃏', '🎴', '🀄', '🕐', '🕑', '🕒', '🕓', '🕔', '🕕', '🕖', '🕗', '🕘', '🕙', '🕚', '🕛', '🕜', '🕝', '🕞', '🕟', '🕠', '🕡', '🕢', '🕣', '🕤', '🕥', '🕦', '🕧'] }
+    ];
+
+    picker.innerHTML = `
+        <div class="emoji-picker-header">
+            <input type="text" class="emoji-search-input" placeholder="Search emojis..." id="emoji-search">
+            <div class="category-tabs" id="category-tabs"></div>
+        </div>
+        <div class="emoji-picker-content" id="emoji-list-container"></div>
+    `;
+
+    const listContainer = getEl('emoji-list-container');
+    const searchInput = getEl('emoji-search');
+    const tabsContainer = getEl('category-tabs');
+
+    const renderEmojis = (filter = "") => {
+        listContainer.innerHTML = '';
+        const currentRecent = getRecentEmojis();
+        emojiData[0].emojis = currentRecent;
+
+        emojiData.forEach((cat, idx) => {
+            const filtered = cat.emojis.filter(e => !filter || e.includes(filter));
+            if (filtered.length === 0) return;
+
+            const title = document.createElement('div');
+            title.className = 'emoji-category-title';
+            title.id = `cat-${idx}`;
+            title.textContent = cat.category;
+            listContainer.appendChild(title);
+
+            const grid = document.createElement('div');
+            grid.className = 'emoji-grid';
+            filtered.forEach(emoji => {
+                const span = document.createElement('span');
+                span.className = 'emoji-item';
+                span.textContent = emoji;
+                span.onclick = () => {
+                    const start = input.selectionStart;
+                    const end = input.selectionEnd;
+                    input.value = input.value.substring(0, start) + emoji + input.value.substring(end);
+                    input.focus();
+                    input.selectionStart = input.selectionEnd = start + emoji.length;
+                    saveRecentEmoji(emoji);
+                    picker.classList.add('hidden');
+                };
+                grid.appendChild(span);
+            });
+            listContainer.appendChild(grid);
+        });
+    };
+
+    // Category Tabs logic
+    const categoryIcons = ['🕒', '😊', '👋', '🦁', '🍎', '🚗', '⌚', '❤️'];
+    emojiData.forEach((cat, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'category-tab-btn';
+        btn.textContent = categoryIcons[idx];
+        btn.onclick = () => {
+            const target = getEl(`cat-${idx}`);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        tabsContainer.appendChild(btn);
+    });
+
+    searchInput.oninput = (e) => renderEmojis(e.target.value);
+    window.addEventListener('emoji-picker-open', () => renderEmojis(searchInput.value));
+    renderEmojis();
 };
 
 /**

@@ -34,6 +34,7 @@ const logoutBtn = document.getElementById('logout-btn');
 // Setup View Elements
 const setupForm = document.getElementById('setup-form');
 const usernameInput = document.getElementById('username');
+const bioInput = document.getElementById('bio');
 const photoInput = document.getElementById('profile-photo-input');
 const photoPreview = document.getElementById('setup-photo-preview');
 
@@ -60,7 +61,7 @@ onAuthStateChanged(auth, async (user) => {
             switchView('setup-view');
         }
     } else {
-        currentUser = null;
+        setCurrentUser(null);
         switchView('auth-view');
     }
 });
@@ -80,6 +81,7 @@ setupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const username = usernameInput.value.trim().toLowerCase();
+    const bio = bioInput.value.trim();
     
     if (!username || username.length < 3) return alert('Username must be at least 3 chars');
 
@@ -111,7 +113,8 @@ setupForm.addEventListener('submit', async (e) => {
         const user = auth.currentUser;
         await updateDoc(doc(db, "users", user.uid), {
             username: username,
-            photoURL: photoURL
+            photoURL: photoURL,
+            bio: bio
         });
 
         console.log('Profile setup complete. Switching view.');

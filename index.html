@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>ArmChat | Private 1-on-1 Messenger</title>
+    <title>ArmChat | Brutal Messenger</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <!-- Google Fonts for typography -->
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
@@ -13,11 +14,8 @@
     <!-- AUTHENTICATION VIEW -->
     <section id="auth-view" class="view active-view">
         <div class="auth-card brutal-box">
-            <div class="header-with-toggle">
-                <h1 class="brand-title">ArmChat</h1>
-                <button type="button" class="theme-toggle-btn brutal-btn small-btn secondary">Dark mode</button>
-            </div>
-            <p>Welcome to the brutal chat platform.</p>
+            <h1 class="brand-title">ArmChat</h1>
+            <p>Welcome to the private brutal chat platform.</p>
             
             <form id="auth-form">
                 <div class="input-group">
@@ -35,11 +33,11 @@
                     <button type="button" id="signup-btn" class="brutal-btn secondary">Sign Up</button>
                 </div>
                 
-                <div class="divider brutal-border-top" style="margin-top: 20px; text-align: center; position: relative;">
-                    <span style="background: var(--accent-color); padding: 0 10px; position: relative; top: -12px; font-weight: bold;">OR</span>
+                <div class="divider">
+                    <span>OR</span>
                 </div>
 
-                <button type="button" id="google-btn" class="brutal-btn secondary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;">
+                <button type="button" id="google-btn" class="brutal-btn">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" height="20">
                     Login with Google
                 </button>
@@ -67,6 +65,11 @@
                     <input type="text" id="username" class="brutal-input" placeholder="brutal_user_123" required>
                 </div>
 
+                <div class="input-group">
+                    <label for="bio">Tell us something brutal (Bio)</label>
+                    <textarea id="bio" class="brutal-input" placeholder="I chat in the shadows..." style="height: 100px; resize: none;"></textarea>
+                </div>
+
                 <button type="submit" id="save-profile-btn" class="brutal-btn primary" style="width: 100%;">Get Started</button>
             </form>
         </div>
@@ -79,36 +82,17 @@
             <!-- Sidebar: User List -->
             <aside class="sidebar brutal-box">
                 <div class="sidebar-header">
-                    <div class="logo-container" id="logo-button">
-                        <h2 class="brand-title-extra-small no-margin">ArmChat ▼</h2>
-                        
-                        <div id="profile-menu" class="profile-dropdown brutal-box hidden">
-                            <div class="menu-user-info brutal-border-bottom">
-                                <div id="my-profile-photo" class="photo-circle-small brutal-box"></div>
-                                <p id="current-user-display" class="current-user-menu"></p>
-                            </div>
-                            <div class="menu-item brutal-border-bottom">
-                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">STATUS</p>
-                                <select id="user-status-select" class="brutal-input" style="padding: 5px; font-size: 0.8rem;">
-                                    <option value="Online">🟢 Online</option>
-                                    <option value="Away">🟡 Away</option>
-                                    <option value="Do Not Disturb">🔴 Do Not Disturb</option>
-                                </select>
-                            </div>
-                            <button id="change-photo-btn" class="menu-item brutal-border-bottom">Update Photo</button>
-                            <input type="file" id="change-photo-input" accept="image/*" hidden>
-                            <button type="button" class="theme-toggle-btn menu-item brutal-border-bottom">DARK MODE</button>
-                            <div class="menu-item brutal-border-bottom">
-                                <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;">SIGNATURE FOG</p>
-                                <div class="accent-swatches">
-                                    <div class="swatch crimson" title="Crimson" data-color="crimson"></div>
-                                    <div class="swatch cobalt" title="Cobalt" data-color="cobalt"></div>
-                                    <div class="swatch emerald" title="Emerald" data-color="emerald"></div>
-                                    <div class="swatch amber" title="Amber" data-color="amber"></div>
-                                </div>
-                            </div>
-                            <button id="logout-btn" class="menu-item danger">Logout</button>
-                        </div>
+                    <div class="logo-container">
+                        <h2 class="brand-title-extra-small no-margin">CHATS</h2>
+                    </div>
+                </div>
+                
+                <!-- My Profile Mini -->
+                <div class="my-profile-mini brutal-border-top">
+                    <div id="my-profile-photo" class="photo-circle-small"></div>
+                    <div class="user-info-text">
+                        <p id="current-user-display" class="username-mini">Loading...</p>
+                        <p class="status-text-mini">Online</p>
                     </div>
                 </div>
                 
@@ -142,18 +126,43 @@
             <!-- Main Chat Area -->
             <main class="chat-area brutal-box">
                 <div class="chat-header">
-                    <button id="menu-toggle" class="brutal-btn small-btn mobile-only">☰</button>
+                    <button id="menu-toggle" class="brutal-btn small-btn mobile-only" title="Menu">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
                     <div id="active-chat-photo" class="photo-circle-small hidden"></div>
                     <div class="header-text-group">
                         <h3 id="active-chat-title">ArmChat</h3>
                         <div id="active-chat-status" class="status-indicator">Select a user to start</div>
                     </div>
+                    <div class="header-brand-center desktop-only">ArmChat</div>
+                    <div class="header-actions">
+                        <button id="search-toggle" class="brutal-btn small-btn secondary" title="Search messages">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </button>
+                        <button id="settings-btn" class="brutal-btn small-btn primary" title="Settings">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="search-overlay" class="search-overlay">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="msg-search-input" placeholder="Search in this chat..." autocomplete="off">
+                    <button id="close-search-btn" title="Close search">✕</button>
+                </div>
+                
+                <div id="pinned-messages" class="pinned-messages-bar hidden">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    <span id="pinned-msg-text">No pinned messages</span>
+                    <button id="unpin-btn" style="margin-left: auto; background: none; border: none; cursor: pointer; font-weight: 900;">✕</button>
                 </div>
                 
                 <div id="messages-container" class="messages-container">
                     <!-- Messages will be injected here -->
                     <div class="empty-state">
-                        <p>No messages yet. Send a 'Yo!' to break the ice.</p>
+                        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        <h2>Your Inbox</h2>
+                        <p>Select a contact to start a brutal conversation.</p>
                     </div>
                 </div>
 
@@ -162,10 +171,25 @@
                 </div>
 
                 <div class="message-input-area">
+                    <div id="reply-preview-container" class="hidden">
+                        <div class="reply-preview-content">
+                            <span class="replying-to-text">Replying to...</span>
+                            <p id="reply-text-preview"></p>
+                        </div>
+                        <button id="cancel-reply-btn">✕</button>
+                    </div>
                     <form id="message-form" class="flex-grow flex gap-10">
+                        <button type="button" id="emoji-btn" class="brutal-btn small-btn secondary" title="Emojis">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                        </button>
                         <input type="text" id="message-input" class="brutal-input" placeholder="Type your message..." autocomplete="off" disabled>
-                        <button type="submit" id="send-btn" class="brutal-btn primary" disabled>Send</button>
+                        <button type="submit" id="send-btn" class="brutal-btn primary" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(45deg); margin-left: -2px;"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
                     </form>
+                    <div id="emoji-picker" class="brutal-box hidden">
+                        <!-- Emojis will be populated here -->
+                    </div>
                 </div>
 
         </div>
@@ -173,6 +197,7 @@
 
     <!-- Context Menu -->
     <div id="context-menu" class="context-menu brutal-box hidden">
+        <button id="pin-btn" class="menu-item brutal-border-bottom">Pin Message</button>
         <button id="react-btn" class="menu-item brutal-border-bottom">React</button>
         <button id="reply-btn" class="menu-item brutal-border-bottom">Reply</button>
         <button id="edit-msg-btn" class="menu-item brutal-border-bottom">Edit</button>
@@ -182,14 +207,99 @@
 
     <!-- Reactions Overlay -->
     <div id="reactions-overlay" class="reactions-overlay brutal-box hidden">
-        <button class="reaction-option">👍</button>
-        <button class="reaction-option">❤️</button>
-        <button class="reaction-option">😂</button>
-        <button class="reaction-option">😮</button>
-        <button class="reaction-option">😢</button>
-        <button class="reaction-option">🔥</button>
+        <button class="reaction-option" data-emoji="❤️">❤️</button>
+        <button class="reaction-option" data-emoji="😂">😂</button>
+        <button class="reaction-option" data-emoji="😮">😮</button>
+        <button class="reaction-option" data-emoji="😢">😢</button>
+        <button class="reaction-option" data-emoji="🔥">🔥</button>
+        <button class="reaction-option" data-emoji="👍">👍</button>
     </div>
 
+    <!-- Settings Drawer -->
+    <div id="settings-drawer" class="settings-drawer">
+        <div class="drawer-header brutal-border-bottom">
+            <h2>Settings</h2>
+            <button id="close-settings-btn" class="brutal-btn small-btn secondary">✕</button>
+        </div>
+        <div class="drawer-content">
+            <div class="settings-section">
+                <h3>Themes</h3>
+                <div class="theme-grid">
+                    <button class="theme-option active" data-theme="light" title="Light" style="background: #F2F6FB; border: 2px solid #0F2233;"></button>
+                    <button class="theme-option" data-theme="dark" title="Dark" style="background: #0D1824; border: 2px solid #E8F2FA;"></button>
+                    <button class="theme-option" data-theme="midnight" title="Midnight Noir" style="background: #0a0e17; border: 2px solid #8B5CF6;"></button>
+                    <button class="theme-option" data-theme="sakura" title="Sakura Dream" style="background: #FFF5F5; border: 2px solid #EC4899;"></button>
+                    <button class="theme-option" data-theme="forest" title="Forest Whisper" style="background: #0D1F0D; border: 2px solid #22C55E;"></button>
+                    <button class="theme-option" data-theme="ocean" title="Oceanic Mist" style="background: #0C1929; border: 2px solid #06B6D4;"></button>
+                    <button class="theme-option" data-theme="sunset" title="Sunset Glow" style="background: #1A0A00; border: 2px solid #F97316;"></button>
+                    <button class="theme-option" data-theme="arctic" title="Arctic Frost" style="background: #F0F9FF; border: 2px solid #0EA5E9;"></button>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>Signature Fog (Accent)</h3>
+                <div class="accent-swatches">
+                    <div class="swatch crimson" title="Crimson" data-color="crimson"></div>
+                    <div class="swatch cobalt" title="Cobalt" data-color="cobalt"></div>
+                    <div class="swatch emerald" title="Emerald" data-color="emerald"></div>
+                    <div class="swatch amber" title="Amber" data-color="amber"></div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>Status</h3>
+                <select id="user-status-select" class="brutal-input">
+                    <option value="Online">🟢 Online</option>
+                    <option value="Away">🟡 Away</option>
+                    <option value="Do Not Disturb">🔴 Do Not Disturb</option>
+                </select>
+            </div>
+
+            <div class="settings-section">
+                <button id="change-photo-btn" class="brutal-btn secondary" style="width: 100%; margin-bottom: 10px;">Update Photo</button>
+                <input type="file" id="change-photo-input" accept="image/*" hidden>
+                <button id="logout-btn" class="brutal-btn danger" style="width: 100%;">Logout</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Reactions Overlay -->
+    <div id="reactions-overlay" class="reactions-overlay brutal-box hidden">
+        <button class="reaction-option" data-emoji="👍">👍</button>
+        <button class="reaction-option" data-emoji="❤️">❤️</button>
+        <button class="reaction-option" data-emoji="😂">😂</button>
+        <button class="reaction-option" data-emoji="😮">😮</button>
+        <button class="reaction-option" data-emoji="😢">😢</button>
+        <button class="reaction-option" data-emoji="🔥">🔥</button>
+    </div>
+
+
+    <!-- Profile Modal -->
+    <div id="profile-modal" class="modal-overlay hidden">
+        <div class="profile-card brutal-box">
+            <div class="profile-header">
+                <div id="profile-modal-avatar" class="profile-avatar-large"></div>
+                <button id="close-profile-btn" class="brutal-btn small-btn secondary" style="position: absolute; top: 20px; right: 20px; width: 40px; height: 40px; padding: 0;">✕</button>
+            </div>
+            <div class="profile-body">
+                <h2 id="profile-modal-name" class="brand-title-extra-small" style="font-size: 2rem; margin-bottom: 5px;">Username</h2>
+                <p id="profile-modal-status" style="font-weight: 800; color: var(--accent-blue); margin-bottom: 20px;">Online</p>
+                
+                <div class="settings-section">
+                    <h3>About</h3>
+                    <p id="profile-modal-bio" style="font-weight: 600; line-height: 1.6; opacity: 0.8;">No bio provided.</p>
+                </div>
+
+                <div class="settings-section" style="margin-top: 20px;">
+                    <h3>Details</h3>
+                    <p id="profile-modal-joined" style="font-size: 0.85rem; font-weight: 700; opacity: 0.5;">Joined: Loading...</p>
+                </div>
+
+                <button id="start-chat-from-profile" class="brutal-btn primary" style="width: 100%; margin-top: 30px;">Send Message</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Scripts using ES Modules for Firebase interoperability -->
     <script type="module" src="js/firebase-config.js"></script>
